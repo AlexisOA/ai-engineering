@@ -12,8 +12,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
-    LLM_PROVIDER: Literal["openai", "anthropic"] = "openai"
-    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_PROVIDER: Literal["openai", "anthropic"] = "anthropic"
+    LLM_MODEL: str = "claude-haiku-4-5"
     APP_ENV: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "DEBUG"
 
