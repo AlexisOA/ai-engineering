@@ -86,6 +86,59 @@ Con el servicio corriendo, accede a la documentacion Swagger UI en:
 - **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
+## Sesion 3 — LiteLLM, Redis cache, SSE y Streamlit
+
+A partir de la Sesion 3 el servicio incorpora una capa de wrapper sobre el LLM que anade:
+
+- **Fallback de proveedor** (LiteLLM Router) — si el modelo primario falla, se intenta el secundario
+- **Cache exact-match** en Redis — la misma transcripcion no vuelve a pagar tokens
+- **Streaming SSE** — endpoint `POST /api/v1/estimate/stream` que emite los tokens segun llegan
+- **UI Streamlit** — cliente real que consume el endpoint SSE
+
+### Arrancar la stack completa
+
+```bash
+cd estimator
+docker compose up --build
+# La API queda en http://localhost:8000 y Redis en redis://localhost:6379
+```
+
+### Probar el endpoint SSE
+
+Demo HTML: abrir [http://localhost:8000/static/sse_demo.html](http://localhost:8000/static/sse_demo.html).
+
+Desde CLI:
+```bash
+curl -N -X POST http://localhost:8000/api/v1/estimate/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"transcription": "We need a small CRM with auth, contacts and roles. MVP six weeks."}'
+```
+
+### Verificar la cache
+
+```bash
+# La misma peticion dos veces — la segunda devuelve cache_hit: true
+curl -s localhost:8000/api/v1/estimate -H 'Content-Type: application/json' \
+  -d '{"transcription": "We need a small CRM with auth, contacts and roles. MVP six weeks."}' \
+  | jq '{cache_hit, cost_usd}'
+
+# Inspeccionar las claves en Redis
+docker compose exec redis redis-cli KEYS 'estimation:*'
+```
+
+### Streamlit
+
+Streamlit corre **fuera** de Docker y consume el endpoint SSE por HTTP:
+
+```bash
+cd estimator
+uv sync
+uv run streamlit run streamlit_app.py
+# Abrir http://localhost:8501
+```
+
+La URL del backend se lee de `ESTIMATOR_API_BASE_URL` (default `http://localhost:8000`).
+
 ---
 
 > Este proyecto forma parte del **Master en AI Engineering** y servira como base para evolucionar hacia una arquitectura RAG con base de datos vectorial en modulos posteriores.

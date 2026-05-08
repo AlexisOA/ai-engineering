@@ -9,30 +9,45 @@ from app.services import llm_service
 WELL_FORMED_MD = CANONICAL_EXAMPLES[0].estimation_markdown
 
 
-def _fake_openai_response(
-    *, estimation: str = WELL_FORMED_MD, finish_reason: str = "stop"
-) -> dict:
+def _fake_response(*, estimation: str = WELL_FORMED_MD, finish_reason: str = "stop") -> dict:
     return {
         "estimation": estimation,
         "model": "gpt-4o-mini",
         "provider": "openai",
         "finish_reason": finish_reason,
         "usage": {"input_tokens": 1234, "output_tokens": 567, "total_tokens": 1801},
+        "latency_ms": 12,
+        "cost_usd": 0.001234,
+        "cache_hit": False,
     }
 
 
 @pytest.fixture
 def call_log(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
-    """Replace _call_openai with a recording fake. Returns the list of calls made."""
+    """Replace the LLM seam with a recording fake. Returns the list of calls."""
     calls: list[dict] = []
 
-    def fake(messages: list[dict], model: str, max_tokens: int) -> dict:
-        calls.append({"messages": messages, "model": model, "max_tokens": max_tokens})
-        # Mirror the real wrapper's behavior: low max_tokens -> length finish_reason
+    def fake(
+        *,
+        system_prompt: str,
+        user_message: str,
+        model_override: str | None,
+        max_tokens: int,
+        thinking_budget: int | None,
+    ) -> dict:
+        calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_message": user_message,
+                "model_override": model_override,
+                "max_tokens": max_tokens,
+                "thinking_budget": thinking_budget,
+            }
+        )
         finish_reason = "length" if max_tokens <= 200 else "stop"
-        return _fake_openai_response(finish_reason=finish_reason)
+        return _fake_response(finish_reason=finish_reason)
 
-    monkeypatch.setattr(llm_service, "_call_openai", fake)
+    monkeypatch.setattr(llm_service, "_invoke_llm", fake)
     yield calls
 
 
@@ -46,6 +61,8 @@ def test_default_request_returns_validation(client: TestClient, call_log: list[d
     assert body["validation"] is not None
     assert body["validation"]["score"] == 1.0
     assert body["extracted_requirements"] is None
+    assert body["cache_hit"] is False
+    assert body["cost_usd"] == pytest.approx(0.001234)
     assert len(call_log) == 1
 
 
@@ -64,8 +81,7 @@ def test_two_phase_invokes_llm_twice_and_fills_extracted(
     assert len(call_log) == 2
     # The second call's user message should be the extracted requirements,
     # not the original transcription.
-    second_user_msg = call_log[1]["messages"][-1]["content"]
-    assert second_user_msg == body["extracted_requirements"]
+    assert call_log[1]["user_message"] == body["extracted_requirements"]
 
 
 def test_max_tokens_low_propagates_finish_reason_length(
@@ -93,9 +109,7 @@ def test_example_format_json_returns_200(client: TestClient, call_log: list[dict
     assert response.status_code == 200
     body = response.json()
     assert body["usage"]["input_tokens"] > 0
-    # The system message sent to OpenAI should contain the JSON examples block
-    system_msg = call_log[0]["messages"][0]["content"]
-    assert "Reference examples (JSON):" in system_msg
+    assert "Reference examples (JSON):" in call_log[0]["system_prompt"]
 
 
 def test_model_override_is_passed_to_provider(
@@ -107,7 +121,7 @@ def test_model_override_is_passed_to_provider(
     }
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 200
-    assert call_log[0]["model"] == "gpt-4o"
+    assert call_log[0]["model_override"] == "gpt-4o"
 
 
 def test_use_examples_false_omits_examples_block(
@@ -119,6 +133,6 @@ def test_use_examples_false_omits_examples_block(
     }
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 200
-    system_msg = call_log[0]["messages"][0]["content"]
-    assert "EXAMPLE 1" not in system_msg
-    assert "Reference examples" not in system_msg
+    system_prompt = call_log[0]["system_prompt"]
+    assert "EXAMPLE 1" not in system_prompt
+    assert "Reference examples" not in system_prompt

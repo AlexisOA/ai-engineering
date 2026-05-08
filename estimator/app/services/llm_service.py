@@ -1,10 +1,19 @@
+"""Estimation orchestration: prompt building, optional preprocessing, and dispatch
+to the LLM. The actual provider calls now live in :mod:`app.services.llm_wrapper`,
+so this module focuses on Session 2 concerns (knobs, prompt assembly) while the
+wrapper handles cache, fallback, and cost tracking transparently.
+"""
+
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import structlog
 
-from app.config import get_settings
 from app.context.examples import format_examples_for_prompt, select_examples
+from app.dependencies import get_llm_wrapper
 from app.schemas.estimation import ExampleFormat, PreprocessingMode
 
 log = structlog.get_logger()
@@ -124,6 +133,30 @@ def build_system_prompt(
 
 
 # ---------------------------------------------------------------------------
+# LLM dispatch (single seam — tests monkeypatch this)
+# ---------------------------------------------------------------------------
+
+
+def _invoke_llm(
+    *,
+    system_prompt: str,
+    user_message: str,
+    model_override: str | None,
+    max_tokens: int,
+    thinking_budget: int | None,
+) -> dict[str, Any]:
+    """Single seam through which every LLM call passes. Tests monkeypatch this."""
+    wrapper = get_llm_wrapper()
+    return wrapper.complete(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        model_override=model_override,
+        max_tokens=max_tokens,
+        thinking_budget=thinking_budget,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Two-phase preprocessing (phase 1: requirement extraction)
 # ---------------------------------------------------------------------------
 
@@ -131,39 +164,29 @@ def build_system_prompt(
 def extract_requirements(
     transcription: str,
     opts: GenerationOptions,
-) -> tuple[str, dict]:
+) -> tuple[str, dict, float]:
     """Run the cheap phase-1 LLM call that turns a raw transcription into clean requirements.
 
-    Returns (requirements_text, usage_dict) where usage_dict has keys
-    'input' and 'output' (token counts) for downstream accounting.
+    Returns ``(requirements_text, usage_dict, cost_usd)``.
     """
-    settings = get_settings()
-    model = opts.model or settings.LLM_MODEL
+    log.info("extracting_requirements", model_override=opts.model)
 
-    log.info("extracting_requirements", provider=settings.LLM_PROVIDER, model=model)
+    result = _invoke_llm(
+        system_prompt=EXTRACTION_SYSTEM_PROMPT,
+        user_message=transcription,
+        model_override=opts.model,
+        max_tokens=EXTRACTION_MAX_TOKENS,
+        thinking_budget=None,
+    )
 
-    if settings.LLM_PROVIDER == "openai":
-        result = _call_openai(
-            messages=[
-                {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
-                {"role": "user", "content": transcription},
-            ],
-            model=model,
-            max_tokens=EXTRACTION_MAX_TOKENS,
-        )
-    else:
-        result = _call_anthropic(
-            system=EXTRACTION_SYSTEM_PROMPT,
-            user_message=transcription,
-            model=model,
-            max_tokens=EXTRACTION_MAX_TOKENS,
-            thinking_budget=None,
-        )
-
-    return result["estimation"], {
-        "input": result["usage"]["input_tokens"],
-        "output": result["usage"]["output_tokens"],
-    }
+    return (
+        result["estimation"],
+        {
+            "input": result["usage"]["input_tokens"],
+            "output": result["usage"]["output_tokens"],
+        },
+        float(result.get("cost_usd", 0.0)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -174,19 +197,19 @@ def extract_requirements(
 def generate_estimation(
     transcription: str,
     opts: GenerationOptions | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Generate a software estimation from a meeting transcription using the configured LLM."""
     opts = opts or GenerationOptions()
-    settings = get_settings()
 
     t0 = time.perf_counter()
 
     prep_usage = {"input": 0, "output": 0}
+    prep_cost = 0.0
     extracted_requirements: str | None = None
     user_input = transcription
 
     if opts.preprocessing == "two_phase":
-        extracted_requirements, prep_usage = extract_requirements(transcription, opts)
+        extracted_requirements, prep_usage, prep_cost = extract_requirements(transcription, opts)
         user_input = extracted_requirements
 
     system_prompt = build_system_prompt(
@@ -196,12 +219,9 @@ def generate_estimation(
         inline_cleaning=(opts.preprocessing == "inline_cleaning"),
     )
 
-    model = opts.model or settings.LLM_MODEL
-
     log.info(
         "generating_estimation",
-        provider=settings.LLM_PROVIDER,
-        model=model,
+        model_override=opts.model,
         preprocessing=opts.preprocessing,
         example_format=opts.example_format,
         num_examples=opts.num_examples,
@@ -211,29 +231,15 @@ def generate_estimation(
     )
 
     try:
-        if settings.LLM_PROVIDER == "openai":
-            if opts.thinking_budget is not None:
-                log.warning("thinking_budget_ignored_for_provider", provider="openai")
-            result = _call_openai(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_input},
-                ],
-                model=model,
-                max_tokens=opts.max_tokens,
-            )
-        else:
-            result = _call_anthropic(
-                system=system_prompt,
-                user_message=user_input,
-                model=model,
-                max_tokens=opts.max_tokens,
-                thinking_budget=opts.thinking_budget,
-            )
-    except LLMServiceError:
-        raise
+        result = _invoke_llm(
+            system_prompt=system_prompt,
+            user_message=user_input,
+            model_override=opts.model,
+            max_tokens=opts.max_tokens,
+            thinking_budget=opts.thinking_budget,
+        )
     except Exception as exc:
-        log.error("llm_call_failed", error=str(exc), provider=settings.LLM_PROVIDER)
+        log.error("llm_call_failed", error=str(exc), error_type=type(exc).__name__)
         raise LLMServiceError(f"LLM call failed: {exc}") from exc
 
     result["usage"]["preprocessing_input_tokens"] = prep_usage["input"]
@@ -241,105 +247,8 @@ def generate_estimation(
     result["preprocessing"] = opts.preprocessing
     result["extracted_requirements"] = extracted_requirements
     result["latency_ms"] = int((time.perf_counter() - t0) * 1000)
+    result["cost_usd"] = round(float(result.get("cost_usd", 0.0)) + prep_cost, 6)
+    # ``cache_hit`` is whatever the wrapper returned for the main estimation call.
+    result.setdefault("cache_hit", False)
 
     return result
-
-
-# ---------------------------------------------------------------------------
-# Provider wrappers
-# ---------------------------------------------------------------------------
-
-
-def _call_openai(messages: list[dict], model: str, max_tokens: int) -> dict:
-    """Send a chat completion request to the OpenAI API."""
-    from openai import OpenAI
-
-    settings = get_settings()
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        max_tokens=max_tokens,
-    )
-
-    usage = response.usage
-    finish_reason = response.choices[0].finish_reason or "stop"
-
-    log.info(
-        "llm_response_received",
-        provider="openai",
-        model=response.model,
-        finish_reason=finish_reason,
-        input_tokens=usage.prompt_tokens,
-        output_tokens=usage.completion_tokens,
-    )
-
-    return {
-        "estimation": response.choices[0].message.content,
-        "model": response.model,
-        "provider": "openai",
-        "finish_reason": finish_reason,
-        "usage": {
-            "input_tokens": usage.prompt_tokens,
-            "output_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-        },
-    }
-
-
-def _call_anthropic(
-    system: str,
-    user_message: str,
-    model: str,
-    max_tokens: int,
-    thinking_budget: int | None,
-) -> dict:
-    """Send a message request to the Anthropic API."""
-    from anthropic import Anthropic
-
-    settings = get_settings()
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-    kwargs: dict = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": [{"role": "user", "content": user_message}],
-    }
-    if thinking_budget is not None:
-        kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        # Anthropic requires max_tokens > thinking_budget; pad with headroom for the answer.
-        kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
-
-    response = client.messages.create(**kwargs)
-
-    finish_reason = response.stop_reason or "stop"
-
-    # When extended thinking is enabled the response contains thinking blocks
-    # before the final text block. Pick the first text block.
-    estimation_text = next(
-        (block.text for block in response.content if getattr(block, "type", None) == "text"),
-        "",
-    )
-
-    log.info(
-        "llm_response_received",
-        provider="anthropic",
-        model=response.model,
-        finish_reason=finish_reason,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-    )
-
-    return {
-        "estimation": estimation_text,
-        "model": response.model,
-        "provider": "anthropic",
-        "finish_reason": finish_reason,
-        "usage": {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-        },
-    }
