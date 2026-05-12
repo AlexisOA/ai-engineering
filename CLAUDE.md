@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-This repo currently contains a single project under `estimator/` — all commands below assume `cd estimator` first. The repo is part of a Master en AI Engineering and is intended to evolve module-by-module (CAG → RAG with vector DB in later modules).
+The monorepo currently contains two projects:
+
+- `estimator/` — FastAPI service implementing CAG (Cache Augmented Generation) with a Redis exact-match cache. This was the original project and most of the document below refers to it; commands assume `cd estimator` unless stated otherwise.
+- `estimator-web/` — Rails 8 frontend + business backend (Postgres + Tailwind + Hotwire). Development-only docker setup; production is out of scope. See `estimator-web/README.md` for its own commands.
+
+A root-level `docker-compose.yml` orchestrates both via the `include:` directive (Compose v2.20+). Running `docker compose up` from the repo root brings up all 4 services (`estimator`, `redis`, `estimator-web`, `postgres`) on a shared network so Rails can call the FastAPI estimator at `http://estimator:8000`.
+
+**Trap to be aware of**: launching from the root vs from a subdirectory creates *different* Compose projects, which means the named volumes (`postgres_data`, `bundle_cache`, `redis_data`) are not shared between the two modes — a database populated in one mode is invisible from the other. Pick a mode per workflow and stay with it.
+
+The repo is part of a Master en AI Engineering and is intended to evolve module-by-module (CAG → RAG with vector DB in later modules).
 
 ## Common commands
 
@@ -91,3 +100,37 @@ The full session script lives in `estimator/docs/session-2-guide.md`.
 ## Docker
 
 Multi-stage Dockerfile: `builder` installs prod-only deps with `uv sync --no-install-project --no-dev`, `runtime` is a clean `python:3.11-slim` that only carries `/app/.venv` and `app/`, runs as non-root `appuser`. There is a Docker-native HEALTHCHECK against `/health`. `docker-compose.yml` bind-mounts `./app` and adds `--reload` for dev — strip both for any production deployment.
+
+## estimator-web (Rails)
+
+Full guide in `estimator-web/README.md`. Quick reference for working from this repo:
+
+```bash
+# Standalone (only Rails + Postgres)
+cd estimator-web
+cp .env.example .env
+docker compose up --build           # http://localhost:3000, healthcheck /up
+
+# Together with the FastAPI estimator (shared network)
+cd /Users/antonioperez/projects/ia/ai-engineering
+docker compose up --build           # 4 services on one network
+```
+
+Common operations always go through the running container:
+
+```bash
+docker compose exec estimator-web bin/rails console
+docker compose exec estimator-web bin/rails db:migrate
+docker compose exec estimator-web bin/rails test
+docker compose exec postgres psql -U postgres estimator_web_development
+```
+
+Design points to respect when editing:
+
+- **`config/database.yml` reads `DATABASE_HOST` / `DATABASE_PORT` / `DATABASE_USER` / `DATABASE_PASSWORD` from ENV** with `nil` fallbacks. The fallbacks let Rails connect via the local Unix socket when no docker is involved — preserve this dual-mode behavior.
+- **The `Dockerfile` is development-only** (single-stage `ruby:3.4.4-slim`, runs as root for bind-mount permission sanity, no precompile, CMD `bin/dev`). The image carries gems + foreman + toolchain only; the source code enters via bind mount from compose, mirroring the `estimator/` pattern that ships only `.venv`.
+- **`bin/dev` runs inside the container**, foreman launches Puma + `tailwindcss:watch`. The `command:` in `docker-compose.yml` prepends `rm -f tmp/pids/server.pid && bin/rails db:prepare` to handle stale PID and first-run DB setup.
+- **Solid Cache / Queue / Cable use in-process / in-memory adapters in development** — no extra services needed. If this changes (closer to prod), they will need Postgres tables and possibly multi-DB config.
+- **Kamal and Thruster** (`.kamal/`, `config/deploy.yml`, `bin/kamal`, `bin/thrust`, gems with `require: false`) are leftovers from `rails new` and are not used. Production is intentionally out of scope.
+
+The master compose at the repo root uses Compose's `include:` directive (requires Compose ≥ v2.20). Volumes are NOT shared between root-launched and subdir-launched projects — they are different Compose projects, so `postgres_data` populated from one mode is invisible from the other.

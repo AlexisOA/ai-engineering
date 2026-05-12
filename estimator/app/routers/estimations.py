@@ -1,99 +1,118 @@
-import asyncio
-from collections.abc import AsyncIterator
+"""Endpoints for the estimation API.
+
+POST /api/v1/estimate          — blocking, returns the full estimation in one shot.
+POST /api/v1/estimate/stream   — Server-Sent Events stream of phase + token events.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Iterator
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_llm_wrapper
-from app.schemas.estimation import (
-    EstimationRequest,
-    EstimationResponse,
-    StreamEstimationRequest,
-)
-from app.services.evaluation import evaluate_estimation_structure
-from app.services.llm_service import (
-    GenerationOptions,
-    LLMServiceError,
-    build_system_prompt,
-    generate_estimation,
-)
+from app.prompts import render_estimation_prompt
+from app.schemas.estimation import EstimationRequest, EstimationResponse
 from app.services.llm_wrapper import LLMWrapper
 
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1", tags=["estimations"])
 
+PROMPT_VERSION = "v1"
+
 
 @router.post("/estimate", response_model=EstimationResponse)
-async def create_estimation(request: EstimationRequest) -> EstimationResponse:
-    """Receive a meeting transcription and return a software project estimation."""
-    opts = GenerationOptions(
-        preprocessing=request.preprocessing,
-        example_format=request.example_format,
-        num_examples=request.num_examples,
-        use_examples=request.use_examples,
-        model=request.model,
-        max_tokens=request.max_tokens,
-        thinking_budget=request.thinking_budget,
+def create_estimation(
+    request: EstimationRequest,
+    wrapper: LLMWrapper = Depends(get_llm_wrapper),
+) -> EstimationResponse:
+    """Render the versioned prompt pair and ask the LLM for an estimation."""
+    system_prompt, user_message = render_estimation_prompt(request, version=PROMPT_VERSION)
+
+    log.info(
+        "estimation_request_received",
+        prompt_version=PROMPT_VERSION,
+        project_type=request.project_type.value,
+        detail_level=request.detail_level.value,
+        output_format=request.output_format.value,
+        description_chars=len(request.description),
     )
 
     try:
-        result = generate_estimation(request.transcription, opts)
-    except LLMServiceError as exc:
-        log.error("estimation_endpoint_error", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        result = wrapper.complete(
+            system_prompt=system_prompt,
+            user_message=user_message,
+        )
+    except Exception as exc:
+        log.error("estimation_endpoint_error", error=str(exc), error_type=type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Upstream LLM call failed") from exc
 
-    validation = (
-        evaluate_estimation_structure(result["estimation"], result["finish_reason"])
-        if request.evaluate
-        else None
-    )
+    return EstimationResponse(text=result["estimation"], prompt_version=PROMPT_VERSION)
 
-    return EstimationResponse(**result, validation=validation)
+
+def _sse(event: str, payload: dict) -> str:
+    """Format a Server-Sent Event frame."""
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @router.post("/estimate/stream")
-async def create_estimation_stream(
-    request: StreamEstimationRequest,
+def stream_estimation(
+    request: EstimationRequest,
     wrapper: LLMWrapper = Depends(get_llm_wrapper),
-) -> EventSourceResponse:
-    """Stream a software estimation token by token via Server-Sent Events.
+) -> StreamingResponse:
+    """Stream the estimation as Server-Sent Events.
 
-    The streaming path is intentionally simpler than POST /estimate: it skips
-    two-phase preprocessing and structural validation, since both fight the UX
-    benefit of streaming (intermediate phase 1 tokens would leak; validation
-    only makes sense over the complete text).
+    Event types emitted (in order):
+        - ``status``    : lifecycle markers (``preparing``, ``calling_llm``)
+        - ``token``     : incremental text chunks from the LLM
+        - ``complete``  : final marker with prompt_version
+        - ``error``     : a single error frame if the LLM call fails mid-stream
+
+    The whole stream stays on a single connection; the client closes it after
+    receiving ``complete`` or ``error``.
     """
-    system_prompt = build_system_prompt()
+    system_prompt, user_message = render_estimation_prompt(request, version=PROMPT_VERSION)
 
-    async def event_generator() -> AsyncIterator[dict]:
-        loop = asyncio.get_running_loop()
-        chunks = wrapper.complete_stream(
-            system_prompt=system_prompt,
-            user_message=request.transcription,
-            model_override=request.model,
-            max_tokens=request.max_tokens,
-        )
+    log.info(
+        "estimation_stream_request_received",
+        prompt_version=PROMPT_VERSION,
+        project_type=request.project_type.value,
+        detail_level=request.detail_level.value,
+        output_format=request.output_format.value,
+        description_chars=len(request.description),
+    )
 
-        def _next_chunk() -> str | None:
-            try:
-                return next(chunks)
-            except StopIteration:
-                return None
-            except Exception as exc:  # noqa: BLE001 — surface as SSE error event
-                log.error("estimate_stream_failed", error=str(exc), error_type=type(exc).__name__)
-                raise
+    def event_stream() -> Iterator[str]:
+        yield _sse("status", {"phase": "preparing", "prompt_version": PROMPT_VERSION})
+        yield _sse("status", {"phase": "calling_llm"})
 
         try:
-            while True:
-                chunk = await loop.run_in_executor(None, _next_chunk)
-                if chunk is None:
-                    break
+            for chunk in wrapper.complete_stream(
+                system_prompt=system_prompt,
+                user_message=user_message,
+            ):
                 if chunk:
-                    yield {"event": "token", "data": chunk}
-            yield {"event": "done", "data": "[DONE]"}
-        except Exception as exc:  # noqa: BLE001
-            yield {"event": "error", "data": str(exc)}
+                    yield _sse("token", {"chunk": chunk})
+        except Exception as exc:
+            log.error(
+                "estimation_stream_error",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            yield _sse("error", {"message": "Upstream LLM call failed"})
+            return
 
-    return EventSourceResponse(event_generator())
+        yield _sse("complete", {"prompt_version": PROMPT_VERSION})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable buffering in proxies like nginx
+        },
+    )

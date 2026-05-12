@@ -4,8 +4,8 @@ and structured logging to every LLM call in the estimator.
 Design notes
 ------------
 - The wrapper exposes two primitives: ``complete()`` (blocking, full response) and
-  ``complete_stream()`` (yields chunks). Higher-level orchestration (preprocessing,
-  validation, prompt building) stays in ``llm_service.py``.
+  ``complete_stream()`` (yields chunks). Prompt building lives in
+  ``app.prompts.loader`` and the router glues both pieces together.
 - The Router is configured with two deployments under the same ``model_name``
   ("estimator") so LiteLLM can switch from primary to fallback transparently.
   When the caller overrides the model per-request (Session 2 live demos), we
@@ -294,7 +294,17 @@ class LLMWrapper:
 
     def _dispatch(self, *, model_override: str | None, **kwargs: Any) -> Any:
         """Call the Router (with fallback) or LiteLLM directly when the caller
-        wants a specific model."""
+        wants a specific model.
+
+        Streaming bypasses the Router: its load-balancing across deployments is
+        non-deterministic and would route some streaming calls to an
+        unreachable fallback (DNS/IPv6 issues with Anthropic in this dev
+        environment cause ``Connection refused`` mid-stream). For
+        ``stream=True`` we always go straight to the primary model.
+        """
+        if kwargs.get("stream") and not model_override:
+            model_override = self.primary_model
+
         if model_override:
             api_key = (
                 self.anthropic_api_key

@@ -1,0 +1,17 @@
+<div class="max-w-2xl mx-auto py-12 px-4">
+  <div class="flex items-baseline justify-between mb-2">
+    <h1 class="text-3xl font-bold tracking-tighter text-white">Estimation</h1>
+    <span class="text-xs font-bold tracking-tight uppercase bg-brand text-ink-dark px-2 py-1 rounded">
+      prompt <%= @response.prompt_version %>
+    </span>
+  </div>
+
+  <article class="mt-6 text-white/90 leading-relaxed whitespace-pre-wrap [&_strong]:text-white [&_strong]:font-bold [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_a]:text-brand [&_a]:underline hover:[&_a]:text-brand-soft">
+    <%= simple_format @response.text %>
+  </article>
+
+  <div class="mt-10 pt-6 border-t border-white/10">
+    <%= link_to "← New estimation", new_estimation_path,
+          class: "text-brand font-bold hover:text-brand-soft tracking-tight" %>
+  </div>
+</div>
