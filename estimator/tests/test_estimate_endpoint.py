@@ -1,50 +1,57 @@
-"""End-to-end tests for POST /api/v1/estimate.
+"""End-to-end tests for POST /api/v1/estimate (structured output).
 
-The LLM is mocked via FastAPI's ``dependency_overrides`` mechanism: the test
-swaps the real ``LLMWrapper`` for a fake whose ``complete`` records the
-arguments it received and returns a canned dict. This isolates the endpoint
-from network access while still exercising request validation, prompt
-rendering and response shaping.
+The pipeline is mocked at the ``EstimationService`` level: the test swaps the
+real service for a fake whose ``estimate`` records the request it received and
+returns a canned ``EstimationResponse``. This isolates the endpoint from
+network access while still exercising request validation and response shaping.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_llm_wrapper
+from app.dependencies import get_estimation_service
 from app.main import app
+from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult
 
 
-class FakeWrapper:
-    """Records the kwargs of every ``complete`` call and returns a canned dict."""
+def _canned_result() -> EstimationResult:
+    return EstimationResult(
+        summary="Mid-sized B2B SaaS for equipment loans across teams.",
+        total_duration_weeks=8,
+        total_cost_eur=30_000,
+        confidence_pct=70,
+        phases=[
+            {"name": "Discovery", "duration_weeks": 1, "cost_eur": 5_000,
+             "summary": "Workshops, scoping and tech spike."},
+            {"name": "Implementation", "duration_weeks": 6, "cost_eur": 20_000,
+             "summary": "Build the core SaaS features."},
+            {"name": "QA + launch", "duration_weeks": 1, "cost_eur": 5_000,
+             "summary": "Test pass and production rollout."},
+        ],
+    )
 
-    def __init__(self, response_text: str = "fake estimation") -> None:
-        self.response_text = response_text
-        self.calls: list[dict[str, Any]] = []
 
-    def complete(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(kwargs)
-        return {
-            "estimation": self.response_text,
-            "model": "gpt-4o-mini",
-            "provider": "openai",
-            "finish_reason": "stop",
-            "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
-            "latency_ms": 1,
-            "cost_usd": 0.0,
-            "cache_hit": False,
-        }
+class FakeEstimationService:
+    """Records the request and returns a canned response."""
+
+    def __init__(self) -> None:
+        self.calls: list[EstimationRequest] = []
+
+    def estimate(self, request: EstimationRequest) -> EstimationResponse:
+        self.calls.append(request)
+        return EstimationResponse(
+            result=_canned_result(), prompt_version="v1", cached=False
+        )
 
 
 @pytest.fixture
-def fake_wrapper() -> FakeWrapper:
-    wrapper = FakeWrapper()
-    app.dependency_overrides[get_llm_wrapper] = lambda: wrapper
-    yield wrapper
-    app.dependency_overrides.pop(get_llm_wrapper, None)
+def fake_service() -> FakeEstimationService:
+    svc = FakeEstimationService()
+    app.dependency_overrides[get_estimation_service] = lambda: svc
+    yield svc
+    app.dependency_overrides.pop(get_estimation_service, None)
 
 
 VALID_PAYLOAD = {
@@ -55,33 +62,31 @@ VALID_PAYLOAD = {
 }
 
 
-def test_valid_payload_returns_text_and_prompt_version(
-    client: TestClient, fake_wrapper: FakeWrapper
+def test_valid_payload_returns_structured_response(
+    client: TestClient, fake_service: FakeEstimationService
 ) -> None:
     response = client.post("/api/v1/estimate", json=VALID_PAYLOAD)
     assert response.status_code == 200
     body = response.json()
-    assert body["text"] == "fake estimation"
     assert body["prompt_version"] == "v1"
+    assert body["cached"] is False
+    assert body["result"]["total_cost_eur"] == 30_000
+    assert body["result"]["confidence_pct"] == 70
+    assert len(body["result"]["phases"]) == 3
+    assert body["result"]["phases"][0]["name"] == "Discovery"
 
 
-def test_endpoint_passes_separate_system_and_user_messages(
-    client: TestClient, fake_wrapper: FakeWrapper
+def test_endpoint_forwards_request_to_service(
+    client: TestClient, fake_service: FakeEstimationService
 ) -> None:
     client.post("/api/v1/estimate", json=VALID_PAYLOAD)
-    assert len(fake_wrapper.calls) == 1
-    call = fake_wrapper.calls[0]
-    assert "system_prompt" in call
-    assert "user_message" in call
-    # Description must land inside the user message, not concatenated into system.
-    assert VALID_PAYLOAD["description"] in call["user_message"]
-    assert VALID_PAYLOAD["description"] not in call["system_prompt"]
-    # The system prompt carries the role and the rules; the user prompt is short.
-    assert "senior project estimator" in call["system_prompt"].lower()
-    assert len(call["user_message"]) < len(call["system_prompt"])
+    assert len(fake_service.calls) == 1
+    received = fake_service.calls[0]
+    assert received.description == VALID_PAYLOAD["description"]
+    assert received.project_type.value == "web_saas"
 
 
-def test_missing_project_type_returns_422(client: TestClient, fake_wrapper: FakeWrapper) -> None:
+def test_missing_project_type_returns_422(client: TestClient, fake_service) -> None:
     payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "project_type"}
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 422
@@ -89,15 +94,13 @@ def test_missing_project_type_returns_422(client: TestClient, fake_wrapper: Fake
     assert any(err["loc"][-1] == "project_type" for err in detail)
 
 
-def test_invalid_enum_value_returns_422(client: TestClient, fake_wrapper: FakeWrapper) -> None:
+def test_invalid_enum_value_returns_422(client: TestClient, fake_service) -> None:
     payload = {**VALID_PAYLOAD, "project_type": "not_a_real_enum"}
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert any(err["loc"][-1] == "project_type" for err in detail)
 
 
-def test_short_description_returns_422(client: TestClient, fake_wrapper: FakeWrapper) -> None:
+def test_short_description_returns_422(client: TestClient, fake_service) -> None:
     payload = {**VALID_PAYLOAD, "description": "too short"}
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 422

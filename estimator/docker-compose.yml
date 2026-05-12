@@ -22,9 +22,11 @@ services:
         condition: service_healthy
 
     # Bind-mount the app/ directory so code changes are reflected immediately
-    # inside the container without rebuilding the image.
+    # inside the container without rebuilding the image. Tests too, so we can
+    # run `pytest` against the live container during development.
     volumes:
       - ./app:/app/app
+      - ./tests:/app/tests
 
     # Override the default CMD to enable auto-reload on file changes.
     # Remove --reload for production deployments.
@@ -41,10 +43,14 @@ services:
       retries: 3
 
   redis:
-    image: redis:7-alpine
+    # Redis Stack bundles the RediSearch + RedisJSON modules that redisvl uses
+    # to do vector similarity queries for the semantic cache. The vanilla
+    # ``redis:7-alpine`` image does NOT ship these modules.
+    image: redis/redis-stack:7.4.0-v0
     container_name: estimator-redis
     ports:
       - "6379:6379"
+      - "8001:8001"  # RedisInsight UI (handy during the live demo)
     volumes:
       - redis_data:/data
     healthcheck:

@@ -20,11 +20,8 @@ services:
       DATABASE_USER: postgres
       DATABASE_PASSWORD: postgres
       RAILS_ENV: development
-      # FastAPI estimator URL — server-side (Rails → FastAPI via docker DNS).
+      # FastAPI estimator URL — Rails calls it server-side via docker DNS.
       ESTIMATOR_API_BASE_URL: http://estimator:8000
-      # Public URL the *browser* uses for the SSE streaming endpoint.
-      # Must be reachable from outside the docker network → host-mapped port.
-      ESTIMATOR_API_PUBLIC_URL: http://localhost:8000
       # LLM calls over long transcriptions can take 1-2 min; leave plenty of head room.
       ESTIMATOR_AI_TIMEOUT: "180"
 

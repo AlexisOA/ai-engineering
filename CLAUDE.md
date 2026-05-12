@@ -4,133 +4,132 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-The monorepo currently contains two projects:
+Two-project monorepo for the Master en AI Engineering programme:
 
-- `estimator/` — FastAPI service implementing CAG (Cache Augmented Generation) with a Redis exact-match cache. This was the original project and most of the document below refers to it; commands assume `cd estimator` unless stated otherwise.
-- `estimator-web/` — Rails 8 frontend + business backend (Postgres + Tailwind + Hotwire). Development-only docker setup; production is out of scope. See `estimator-web/README.md` for its own commands.
+- `estimator/` — FastAPI service. The AI side: prompts, LLM calls, structured output, guardrails, semantic cache. All AI logic lives here; the rest of the programme evolves this codebase module by module.
+- `estimator-web/` — Rails 8 frontend + business backend (Postgres + Tailwind + Hotwire). Reference implementation of the cliente; each student is free to use a different stack. The live sessions invoke `estimator` directly via httpie/curl (stack-agnostic).
 
 A root-level `docker-compose.yml` orchestrates both via the `include:` directive (Compose v2.20+). Running `docker compose up` from the repo root brings up all 4 services (`estimator`, `redis`, `estimator-web`, `postgres`) on a shared network so Rails can call the FastAPI estimator at `http://estimator:8000`.
 
-**Trap to be aware of**: launching from the root vs from a subdirectory creates *different* Compose projects, which means the named volumes (`postgres_data`, `bundle_cache`, `redis_data`) are not shared between the two modes — a database populated in one mode is invisible from the other. Pick a mode per workflow and stay with it.
+**Trap to be aware of**: launching from the root vs from a subdirectory creates *different* Compose projects, which means the named volumes (`postgres_data`, `bundle_cache`, `redis_data`) are not shared between the two modes. Pick a mode per workflow and stay with it.
 
-The repo is part of a Master en AI Engineering and is intended to evolve module-by-module (CAG → RAG with vector DB in later modules).
+Session guides for the instructor live in `guides/` (git-ignored). `guides/session-4-live-guide.md` is the most recent.
 
-## Common commands
+## Common commands (estimator)
 
 Dependency / runtime management uses **uv** (Astral) and Python 3.11.
 
 ```bash
-# Install deps (creates .venv)
-uv sync
+cd estimator
 
 # Run the API locally with hot reload
 uv run uvicorn app.main:app --reload
 
-# Run the full test suite
-uv run pytest
-
-# Run a single test file or test
-uv run pytest tests/test_health.py
-uv run pytest tests/test_health.py::test_name -v
+# Tests
+uv run pytest -v
+uv run pytest tests/test_schemas.py::test_phases_sum_must_equal_total_cost -v
 
 # Lint
 uv run ruff check .
 uv run ruff format .
 
-# Docker (recommended dev path — bind-mounts app/ for live reload)
+# Docker (recommended dev path — bind-mounts app/ and tests/ for live reload)
 docker compose up --build
 ```
 
 Service listens on `http://localhost:8000`; `/docs` (Swagger) and `/redoc` are enabled. Health probe at `GET /health`. Main API endpoint is `POST /api/v1/estimate`.
 
-## Architecture
+## Architecture (post-Session 4)
 
-The estimator is a FastAPI service implementing **Cache Augmented Generation (CAG)**: reference estimations are inlined as static text inside the system prompt — no vector store, no retrieval step. This is a deliberate first-stage choice; later modules will migrate to RAG.
+The estimator is a typed estimation service implementing a five-layer pipeline. Free-text in, validated structured JSON out.
 
-Request flow:
-
-1. `app/routers/estimations.py` — `POST /api/v1/estimate` accepts an `EstimationRequest` (transcription + optional knobs: `preprocessing`, `example_format`, `num_examples`, `use_examples`, `model`, `max_tokens`, `thinking_budget`, `evaluate`).
-2. `app/services/llm_service.py::generate_estimation` — builds a `GenerationOptions`, optionally runs `extract_requirements` for two-phase preprocessing, builds the system prompt (`build_system_prompt`), and dispatches to either `_call_openai` or `_call_anthropic` based on `LLM_PROVIDER`. Returns a dict with `estimation`, `model`, `provider`, `usage`, `finish_reason`, `latency_ms`, `preprocessing`, `extracted_requirements`.
-3. `app/services/evaluation.py::evaluate_estimation_structure` — pure regex/parsing pass that produces a `StructureCheck` (sections present, breakdown sums match declared totals, `finish_reason` ok, `score`, `issues`).
-4. The router merges the LLM result with the validation and returns `EstimationResponse`.
+```
+POST /api/v1/estimate
+  └→ app/routers/estimations.py    (thin HTTP layer, error mapping)
+       └→ app/services/estimation.py::EstimationService.estimate()
+            1. app/guardrails/input.py::check_input()         (moderation + injection + PII)
+            2. app/services/cache.py::EstimationCache.get()   (exact-match SHA-256)
+            3. app/cache/semantic.py::EstimationSemanticCache.lookup()
+                                                                (redisvl vector similarity)
+            4. app/prompts/loader.py::render_estimation_prompt()  (Jinja2 versioned templates)
+            5. app/services/llm_wrapper.py::complete_structured()
+                                                                (Instructor + Pydantic validators
+                                                                 with automatic re-prompt)
+            6. app/guardrails/output.py::enforce_scope_response() (filter policy)
+            7. cache.set() + semantic_cache.store()
+            8. return EstimationResponse(result, prompt_version, cached)
+```
 
 Key design points future changes should respect:
 
-- **Provider abstraction lives in one file** (`llm_service.py`). Both branches return the same dict shape (`estimation`, `model`, `provider`, `finish_reason`, `usage`) so the router stays provider-agnostic. Keep that contract when adding providers.
-- **Settings are a cached singleton** via `app/config.py::get_settings` (`@lru_cache`). Pydantic Settings runs a `model_validator` that requires the API key matching `LLM_PROVIDER` to be set — changing provider also requires changing the key. Because of the cache, **any change to `.env` requires restarting uvicorn** (a `--reload` is not enough; the singleton is module-scoped).
-- **CAG examples** live in `app/context/examples.py`. The single source of truth is `CANONICAL_EXAMPLES: list[CanonicalExample]`; the three formatters (`_format_markdown`, `_format_json`, `_format_narrative`) derive their output from it. `estimation_markdown` is precomputed per example so the Markdown rendering stays byte-for-byte stable. When this graduates to RAG, this module is the seam to replace.
-- **Pricing assumptions** (62.50 EUR/h dev, 50 EUR/h designer) live in `build_system_prompt`. Edit there, not in examples. Each canonical example must satisfy `sum_h == total_hours` and `sum_c == total_cost` (a unit test enforces this).
-- **Output prompt switch**: `llm_service.py` defines `PROMPT_OUTPUT_BASIC` and `PROMPT_OUTPUT_STRUCTURED`; the `ACTIVE_OUTPUT_PROMPT` line picks one. The Session 2 live demo flips this constant on the fly.
-- **`thinking_budget` is Anthropic-only** — for OpenAI it is logged as a warning and ignored. The Anthropic wrapper auto-pads `max_tokens` so it stays above the budget.
-- **Logging** is `structlog`, configured in `lifespan` (`main.py`): JSON in `production`, console in dev. Use `structlog.get_logger()` rather than stdlib `logging`.
-
-## How to compare in live demos
-
-The endpoint is built to support side-by-side comparisons without code changes. The `usage`, `latency_ms`, `finish_reason` and `validation.score` fields in the response are the projected metrics during sessions.
-
-```bash
-TRANS=$(jq -Rs . < estimator/app/fixtures/long_transcription.txt)
-
-# Three preprocessing modes
-for MODE in none inline_cleaning two_phase; do
-  curl -s localhost:8000/api/v1/estimate -H 'Content-Type: application/json' \
-    -d "{\"transcription\": $TRANS, \"preprocessing\":\"$MODE\"}" \
-    | jq "{mode:\"$MODE\", score:.validation.score, latency_ms, usage}"
-done
-
-# Number of CAG examples (rendimiento decreciente)
-for N in 0 1 3 5; do
-  curl -s localhost:8000/api/v1/estimate -H 'Content-Type: application/json' \
-    -d "{\"transcription\": $TRANS, \"num_examples\": $N}" \
-    | jq "{n: $N, input_tokens: .usage.input_tokens, latency_ms, score: .validation.score}"
-done
-```
-
-The full session script lives in `estimator/docs/session-2-guide.md`.
+- **The router has no business logic.** It only catches three exceptions and turns them into HTTP statuses: `InputGuardrailViolation` → 400, anything else from the pipeline (including `instructor.exceptions.InstructorRetryException`) → 502, plus Pydantic 422 from `EstimationRequest` validation. Add new policies inside `EstimationService.estimate()`, not in the router.
+- **Schema is the contract.** `EstimationResult` (in `app/schemas/estimation.py`) is what Instructor enforces against the LLM. The two `model_validator`s (`phases_sum_matches_total`, `low_confidence_requires_out_of_scope_prefix`) are the business rules — when they raise, Instructor re-prompts the LLM up to `max_retries=6` times.
+- **Field order matters with Instructor.** `phases` is declared BEFORE `total_cost_eur` / `total_duration_weeks` on purpose: the LLM emits phases first (autoregressive) and then only needs to sum, instead of picking a round total and back-fitting phases. With smaller models like `gpt-4o-mini` this is the difference between consistent success and arithmetic failures.
+- **Two caches in series.** Exact-match cache (`app/services/cache.py`) keys on SHA-256 of the typed request + prompt_version + model. The semantic cache (`app/cache/semantic.py`) layers on top: same bucket (`prompt_version:project_type:detail_level:output_format`) + cosine similarity ≥ `SEMANTIC_CACHE_THRESHOLD` (default 0.85). The semantic cache requires Redis Stack (`redis/redis-stack:7.4.0-v0`), not vanilla Redis — RediSearch is mandatory for vector queries.
+- **Guardrails are policies, not features.** `check_input` uses `exception` policy (raise on violation). `enforce_scope_response` uses `filter` (rewrite the summary). The schema validators use `re-prompt` (Instructor handles it). The split is documented in the live-session guide.
+- **Settings are a cached singleton** via `app/config.py::get_settings` (`@lru_cache`). Any change to `.env` requires recreating the container (`docker compose up -d --force-recreate`); a `--reload` is not enough.
+- **Logging** is `structlog`. JSON in `production`, console in dev. Use `structlog.get_logger()` rather than stdlib `logging`.
+- **The LLM wrapper bypasses the Router for streaming and for structured calls** (see `_dispatch`). LiteLLM's Router does round-robin between deployments, which would non-deterministically route to a fallback that may be unreachable. For deterministic behaviour `complete_structured` always uses the primary model directly.
 
 ## Configuration
 
-`.env` (copied from `.env.example`) drives everything via `pydantic-settings`. Notable vars:
+`.env` (copied from `.env.example`) drives everything via `pydantic-settings`.
 
-- `LLM_PROVIDER` — `openai` (default) or `anthropic`.
-- `LLM_MODEL` — model id passed straight through to the SDK (e.g. `gpt-4o-mini`, `claude-...`).
-- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — only the one matching `LLM_PROVIDER` is required.
-- `APP_ENV` — `development` | `staging` | `production` (controls log renderer).
+Session 2/3 vars:
+- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — at least one required.
+- `PRIMARY_MODEL` / `FALLBACK_MODEL` — LiteLLM Router config.
+- `LLM_TIMEOUT` / `LLM_RETRIES` — per LLM call.
+- `REDIS_URL` — points to the Redis Stack container in compose.
+
+Session 4 vars:
+- `EMBEDDING_MODEL` — defaults to `text-embedding-3-small`.
+- `SEMANTIC_CACHE_THRESHOLD` — cosine similarity threshold (0..1). 0.85 default = the typical range mentioned in the live guide. Lower = more hits, more false positives.
+- `SEMANTIC_CACHE_TTL` — seconds (24h default).
+- `SEMANTIC_CACHE_LOG_ONLY` — when `true`, the cache logs would-be hits but never serves them. Use it to calibrate the threshold against real traffic before flipping on.
 
 ## Docker
 
-Multi-stage Dockerfile: `builder` installs prod-only deps with `uv sync --no-install-project --no-dev`, `runtime` is a clean `python:3.11-slim` that only carries `/app/.venv` and `app/`, runs as non-root `appuser`. There is a Docker-native HEALTHCHECK against `/health`. `docker-compose.yml` bind-mounts `./app` and adds `--reload` for dev — strip both for any production deployment.
+Multi-stage Dockerfile: `builder` installs prod-only deps with `uv sync --no-install-project --no-dev`, `runtime` is a clean `python:3.11-slim` that only carries `/app/.venv` and `app/`, runs as non-root `appuser`. There is a Docker-native HEALTHCHECK against `/health`. `docker-compose.yml` bind-mounts `./app` and `./tests` for development; `--reload` is on. Redis service uses `redis/redis-stack:7.4.0-v0` for RediSearch.
+
+For running tests inside the container the prod image lacks pytest. Two options:
+```bash
+# 1. Run on the host with uv
+cd estimator && uv sync && uv run pytest
+
+# 2. Install ad-hoc inside the container (lost on rebuild)
+docker compose exec estimator bash -c '
+  python -m ensurepip --upgrade && \
+  python -m pip install --quiet pytest pytest-asyncio fakeredis httpx
+'
+docker compose exec estimator python -m pytest tests/ -v
+```
 
 ## estimator-web (Rails)
 
-Full guide in `estimator-web/README.md`. Quick reference for working from this repo:
+Full guide in `estimator-web/README.md`. Consumes `POST /api/v1/estimate` and renders the structured `EstimationResponse`. Quick reference:
 
 ```bash
-# Standalone (only Rails + Postgres)
 cd estimator-web
-cp .env.example .env
-docker compose up --build           # http://localhost:3000, healthcheck /up
+docker compose up --build               # http://localhost:3000
 
-# Together with the FastAPI estimator (shared network)
+# Or with the FastAPI estimator (shared network):
 cd /Users/antonioperez/projects/ia/ai-engineering
-docker compose up --build           # 4 services on one network
+docker compose up --build
 ```
 
-Common operations always go through the running container:
+Common operations:
 
 ```bash
 docker compose exec estimator-web bin/rails console
-docker compose exec estimator-web bin/rails db:migrate
 docker compose exec estimator-web bin/rails test
 docker compose exec postgres psql -U postgres estimator_web_development
 ```
 
 Design points to respect when editing:
 
-- **`config/database.yml` reads `DATABASE_HOST` / `DATABASE_PORT` / `DATABASE_USER` / `DATABASE_PASSWORD` from ENV** with `nil` fallbacks. The fallbacks let Rails connect via the local Unix socket when no docker is involved — preserve this dual-mode behavior.
-- **The `Dockerfile` is development-only** (single-stage `ruby:3.4.4-slim`, runs as root for bind-mount permission sanity, no precompile, CMD `bin/dev`). The image carries gems + foreman + toolchain only; the source code enters via bind mount from compose, mirroring the `estimator/` pattern that ships only `.venv`.
-- **`bin/dev` runs inside the container**, foreman launches Puma + `tailwindcss:watch`. The `command:` in `docker-compose.yml` prepends `rm -f tmp/pids/server.pid && bin/rails db:prepare` to handle stale PID and first-run DB setup.
-- **Solid Cache / Queue / Cable use in-process / in-memory adapters in development** — no extra services needed. If this changes (closer to prod), they will need Postgres tables and possibly multi-DB config.
-- **Kamal and Thruster** (`.kamal/`, `config/deploy.yml`, `bin/kamal`, `bin/thrust`, gems with `require: false`) are leftovers from `rails new` and are not used. Production is intentionally out of scope.
-
-The master compose at the repo root uses Compose's `include:` directive (requires Compose ≥ v2.20). Volumes are NOT shared between root-launched and subdir-launched projects — they are different Compose projects, so `postgres_data` populated from one mode is invisible from the other.
+- **`EstimationResponse.from_hash` builds nested `EstimationResult` + `Phase` POROs** from the FastAPI JSON. The view (`show.html.erb`) renders the typed object, not raw text.
+- **The `Stimulus form_loading_controller`** is intentionally simple: it just disables the submit button and shows rolling phase messages while Rails waits for FastAPI. No SSE / no streaming — those were removed when the response became a single JSON object.
+- **The cliente never talks to OpenAI / Anthropic directly.** It only POSTs to FastAPI, and the FastAPI handles guardrails, LLM calls and caches. That boundary is deliberate and documented in the session guide.
+- **GuardrailViolation is a first-class error** in the cliente (`app/services/estimator_ai/client.rb`). The FastAPI returns 400 with `{detail: {reason, message}}` when input is rejected (moderation/prompt_injection/pii); the cliente surfaces this in `flash`.
+- **`config/database.yml` reads `DATABASE_HOST` / `DATABASE_PORT` / `DATABASE_USER` / `DATABASE_PASSWORD` from ENV** with `nil` fallbacks (Unix socket when not in docker).
+- **Kamal and Thruster** (`.kamal/`, `config/deploy.yml`, `bin/kamal`, `bin/thrust`, gems with `require: false`) are leftovers from `rails new`. Production is out of scope.

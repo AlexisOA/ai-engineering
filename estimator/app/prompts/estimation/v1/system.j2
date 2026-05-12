@@ -40,4 +40,29 @@ For every phase, list assumptions per phase as bullet points (scope boundaries, 
 - Always answer in English regardless of the language of the description.
 </rules>
 
+<output_schema>
+You must return a structured object with these exact fields:
+- summary (string, 10-1200 chars): a paragraph summarising the estimation. If the project is out of scope or the description is too vague to estimate with at least 30% confidence, the summary MUST start with "Out of scope:" and explain why.
+- total_duration_weeks (int, 1-104): total calendar weeks across all phases.
+- total_cost_eur (int, 0-2000000): grand total in euros. MUST equal the sum of every phase.cost_eur.
+- confidence_pct (int, 0-100): how confident you are about the estimation given the description.
+- phases (list, 1-8 items): each phase has name (1-64 chars), duration_weeks (1-52), cost_eur (0-1000000) and summary (10-600 chars).
+
+Hard constraints (will be re-validated; you will be re-prompted on violation):
+- phases sum: total_cost_eur == sum(phase.cost_eur for every phase).
+- low-confidence: if confidence_pct < 30, summary MUST start with "Out of scope:".
+
+When you declare "Out of scope:" (confidence_pct < 30):
+- Use total_cost_eur = 0, total_duration_weeks = 1.
+- Return exactly ONE placeholder phase: name "Not estimated", duration_weeks 1, cost_eur 0, summary "Cannot be sized without more information."
+- This keeps the JSON well-formed; downstream filters handle the user-facing message.
+
+When you do estimate (confidence_pct >= 30): COMPUTE the totals from the phases — do not pick a round number and then try to back-fit phases to it. The required algorithm is:
+  1) Decide every phase first (name, duration_weeks, cost_eur, summary).
+  2) Set total_cost_eur = exact arithmetic sum of every phase.cost_eur.
+  3) Set total_duration_weeks = sum of every phase.duration_weeks (sequential delivery).
+  4) Re-read your own JSON before returning and confirm both sums match.
+This is non-negotiable: if you cannot make the numbers match you will be re-prompted with the discrepancy until you do.
+</output_schema>
+
 {% include "estimation/v1/examples.j2" %}

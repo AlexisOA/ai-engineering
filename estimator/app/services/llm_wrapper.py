@@ -3,27 +3,26 @@ and structured logging to every LLM call in the estimator.
 
 Design notes
 ------------
-- The wrapper exposes two primitives: ``complete()`` (blocking, full response) and
-  ``complete_stream()`` (yields chunks). Prompt building lives in
-  ``app.prompts.loader`` and the router glues both pieces together.
+- The wrapper exposes two primitives:
+  - ``complete()``: legacy free-text answer (kept for tests that depend on it).
+  - ``complete_structured()``: returns a validated Pydantic model via Instructor,
+    re-prompting on validator errors up to ``max_retries`` times.
 - The Router is configured with two deployments under the same ``model_name``
   ("estimator") so LiteLLM can switch from primary to fallback transparently.
-  When the caller overrides the model per-request (Session 2 live demos), we
-  bypass the Router and call ``litellm.completion`` directly with explicit
-  credentials — that path has no fallback by design.
-- The cache key includes the full system prompt and the generation knobs, so any
-  Session 2 toggle (preprocessing, num_examples, ACTIVE_OUTPUT_PROMPT) implicitly
-  invalidates the cache without manual flushing.
+  When the caller overrides the model per-request we bypass the Router and call
+  ``litellm.completion`` directly — that path has no fallback by design.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any, Iterator
+from typing import Any, TypeVar
 
+import instructor
 import litellm
 import structlog
 from litellm import Router
+from pydantic import BaseModel
 
 from app.services.cache import EstimationCache
 
@@ -38,6 +37,9 @@ MODEL_COSTS: dict[str, dict[str, float]] = {
     "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
     "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
 }
+
+
+T = TypeVar("T", bound=BaseModel)
 
 
 def _estimate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
@@ -105,6 +107,10 @@ class LLMWrapper:
             num_retries=num_retries,
         )
 
+        # Instructor wraps ``litellm.completion`` so we can call any of the
+        # underlying providers with the same ``response_model=`` API.
+        self._instructor = instructor.from_litellm(litellm.completion)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -118,9 +124,7 @@ class LLMWrapper:
         max_tokens: int = 4000,
         thinking_budget: int | None = None,
     ) -> dict[str, Any]:
-        """Single LLM call with cache + (optional) fallback. Returns the legacy dict shape
-        plus ``cache_hit`` and ``cost_usd`` fields.
-        """
+        """Single LLM call returning a free-text answer. Kept for tests."""
         cache_key_model = model_override or self.primary_model
         cache_key = EstimationCache.make_key(
             system_prompt=system_prompt,
@@ -148,7 +152,6 @@ class LLMWrapper:
             "llm_call_started",
             mode="blocking",
             model=model_override or self.primary_model,
-            has_thinking=thinking_budget is not None,
         )
         t0 = time.perf_counter()
         try:
@@ -178,64 +181,57 @@ class LLMWrapper:
         self.cache.set(cache_key, result)
         return {**result, "cache_hit": False}
 
-    def complete_stream(
+    def complete_structured(
         self,
         *,
         system_prompt: str,
         user_message: str,
+        response_model: type[T],
         model_override: str | None = None,
         max_tokens: int = 4000,
-    ) -> Iterator[str]:
-        """Yield text chunks as they arrive from the model.
+        max_retries: int = 6,
+    ) -> tuple[T, dict[str, Any]]:
+        """Run the LLM with Instructor and return ``(model_instance, meta)``.
 
-        Cache hits replay the cached estimation as a single chunk so the client UX
-        stays consistent. Cache misses stream live and the full text is cached
-        once the stream finishes (without ``cost_usd`` since LiteLLM does not
-        always report token usage for streaming calls).
+        ``meta`` includes ``model``, ``provider`` and ``latency_ms``. Instructor
+        re-prompts the LLM up to ``max_retries`` times when a Pydantic validator
+        raises, feeding the ``ValueError`` message back to the model.
+
+        Streaming bypasses are not relevant here — the entire model is built
+        atomically by Instructor before this function returns.
         """
-        cache_key_model = model_override or self.primary_model
-        cache_key = EstimationCache.make_key(
-            system_prompt=system_prompt,
-            user_message=user_message,
-            model=cache_key_model,
-            max_tokens=max_tokens,
-            thinking_budget=None,
-        )
-        cached = self.cache.get(cache_key)
-        if cached:
-            log.info("stream_cache_hit", chars=len(cached.get("estimation", "")))
-            yield cached.get("estimation", "")
-            return
-
+        target_model = model_override or self.primary_model
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
-        kwargs = self._build_call_kwargs(
-            messages=messages,
-            max_tokens=max_tokens,
-            thinking_budget=None,
-            model_override=model_override,
-            stream=True,
+
+        api_key = (
+            self.anthropic_api_key
+            if _provider_from_model(target_model) == "anthropic"
+            else self.openai_api_key
         )
 
         log.info(
-            "llm_stream_started",
-            model=model_override or self.primary_model,
+            "llm_structured_call_started",
+            model=target_model,
+            response_model=response_model.__name__,
         )
         t0 = time.perf_counter()
-        full_text: list[str] = []
         try:
-            response = self._dispatch(model_override=model_override, **kwargs)
-            for chunk in response:
-                delta = _extract_delta(chunk)
-                if delta:
-                    full_text.append(delta)
-                    yield delta
+            result = self._instructor.chat.completions.create(
+                model=target_model,
+                api_key=api_key,
+                timeout=self.timeout,
+                messages=messages,
+                response_model=response_model,
+                max_tokens=max_tokens,
+                max_retries=max_retries,
+            )
         except Exception as exc:
             latency_ms = int((time.perf_counter() - t0) * 1000)
             log.error(
-                "llm_stream_failed",
+                "llm_structured_call_failed",
                 error_type=type(exc).__name__,
                 error=str(exc),
                 latency_ms=latency_ms,
@@ -243,21 +239,18 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
-        rendered = "".join(full_text)
-        log.info("llm_stream_completed", latency_ms=latency_ms, chars=len(rendered))
-
-        self.cache.set(
-            cache_key,
-            {
-                "estimation": rendered,
-                "model": model_override or self.primary_model,
-                "provider": _provider_from_model(model_override or self.primary_model),
-                "finish_reason": "stop",
-                "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-                "latency_ms": latency_ms,
-                "cost_usd": 0.0,
-            },
+        meta = {
+            "model": _normalise_model_name(target_model),
+            "provider": _provider_from_model(target_model),
+            "latency_ms": latency_ms,
+        }
+        log.info(
+            "llm_structured_call_completed",
+            model=meta["model"],
+            provider=meta["provider"],
+            latency_ms=latency_ms,
         )
+        return result, meta
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -270,14 +263,11 @@ class LLMWrapper:
         max_tokens: int,
         thinking_budget: int | None,
         model_override: str | None,
-        stream: bool = False,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "messages": messages,
             "max_tokens": max_tokens,
         }
-        if stream:
-            kwargs["stream"] = True
 
         if thinking_budget is not None:
             target_model = model_override or self.primary_model
@@ -294,17 +284,7 @@ class LLMWrapper:
 
     def _dispatch(self, *, model_override: str | None, **kwargs: Any) -> Any:
         """Call the Router (with fallback) or LiteLLM directly when the caller
-        wants a specific model.
-
-        Streaming bypasses the Router: its load-balancing across deployments is
-        non-deterministic and would route some streaming calls to an
-        unreachable fallback (DNS/IPv6 issues with Anthropic in this dev
-        environment cause ``Connection refused`` mid-stream). For
-        ``stream=True`` we always go straight to the primary model.
-        """
-        if kwargs.get("stream") and not model_override:
-            model_override = self.primary_model
-
+        wants a specific model."""
         if model_override:
             api_key = (
                 self.anthropic_api_key
@@ -345,13 +325,3 @@ class LLMWrapper:
             "latency_ms": latency_ms,
             "cost_usd": _estimate_cost(model, input_tokens, output_tokens),
         }
-
-
-def _extract_delta(chunk: Any) -> str:
-    """Pull the text delta out of a LiteLLM streaming chunk."""
-    try:
-        delta = chunk.choices[0].delta
-    except (AttributeError, IndexError):
-        return ""
-    content = getattr(delta, "content", None)
-    return content or ""

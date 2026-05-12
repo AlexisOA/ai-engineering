@@ -2,9 +2,12 @@ require "faraday"
 
 module EstimatorAi
   class Client
-    Error          = Class.new(StandardError)
-    InvalidRequest = Class.new(Error)
-    ServerError    = Class.new(Error)
+    Error              = Class.new(StandardError)
+    InvalidRequest     = Class.new(Error)
+    GuardrailViolation = Class.new(Error)
+    ServerError        = Class.new(Error)
+
+    GUARDRAIL_REASONS = %w[moderation prompt_injection pii].freeze
 
     def initialize(base_url: Rails.application.config.estimator_ai.base_url,
                    timeout:  Rails.application.config.estimator_ai.timeout)
@@ -24,6 +27,15 @@ module EstimatorAi
       case response.status
       when 200
         EstimationResponse.from_hash(response.body)
+      when 400
+        detail = extract_detail(response.body)
+        reason = detail.is_a?(Hash) ? detail["reason"] : nil
+        if GUARDRAIL_REASONS.include?(reason)
+          message = detail.is_a?(Hash) ? detail["message"] || reason : reason
+          raise GuardrailViolation, "Input rejected (#{reason}): #{message}"
+        else
+          raise InvalidRequest, detail.to_s
+        end
       when 422
         raise InvalidRequest, extract_detail(response.body).to_s
       when 502

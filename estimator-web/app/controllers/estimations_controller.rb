@@ -12,7 +12,11 @@ class EstimationsController < ApplicationController
     end
 
     @response = EstimatorAi::Client.new.estimate(@request)
+    @request_payload = @request                  # used by the view to know output_format
     render :show
+  rescue EstimatorAi::Client::GuardrailViolation => e
+    flash.now[:alert] = e.message
+    render :new, status: :unprocessable_entity
   rescue EstimatorAi::Client::InvalidRequest => e
     flash.now[:alert] = e.message
     render :new, status: :unprocessable_entity
