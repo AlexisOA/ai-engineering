@@ -45,7 +45,7 @@ class EstimationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "textarea[name='estimation_request[description]']"
   end
 
-  test "POST create with valid params calls client and renders structured show" do
+  test "POST create with valid params persists and redirects to show" do
     stub_request(:post, "#{@base_url}/api/v1/estimate")
       .to_return(
         status: 200,
@@ -53,16 +53,60 @@ class EstimationsControllerTest < ActionDispatch::IntegrationTest
         headers: { "Content-Type" => "application/json" }
       )
 
-    post estimation_path, params: @valid_params
+    assert_difference -> { Estimation.count }, 1 do
+      post estimations_path, params: @valid_params
+    end
+
+    estimation = Estimation.order(:created_at).last
+    assert_redirected_to estimation_path(estimation)
+    assert_equal "v1", estimation.prompt_version
+    assert_equal false, estimation.cached
+
+    follow_redirect!
     assert_response :success
     assert_select "h1", "Estimation"
     assert_match "12-week estimation across 5 phases", response.body
     assert_match "Discovery", response.body
-    assert_match "30,000", response.body                                 # total formatted
+    assert_match "30,000", response.body
     assert_match "v1", response.body
   end
 
-  test "POST create renders cached badge when response says cached" do
+  test "GET show renders the persisted estimation" do
+    payload = structured_body.merge(cached: true).deep_stringify_keys
+    estimation = Estimation.create!(
+      description:      @valid_params[:estimation_request][:description],
+      project_type:     "mobile_app",
+      detail_level:     "medium",
+      output_format:    "phases_table",
+      response_payload: payload,
+      prompt_version:   "v1",
+      cached:           true
+    )
+
+    get estimation_path(estimation)
+    assert_response :success
+    assert_match "12-week estimation across 5 phases", response.body
+    assert_match "cached", response.body
+  end
+
+  test "GET index lists existing estimations" do
+    Estimation.create!(
+      description:      "Internal CRM with reporting",
+      project_type:     "web_app",
+      detail_level:     "high",
+      output_format:    "phases_table",
+      response_payload: structured_body.deep_stringify_keys,
+      prompt_version:   "v1",
+      cached:           false
+    )
+
+    get estimations_path
+    assert_response :success
+    assert_select "h1", "Estimaciones"
+    assert_match "Internal CRM with reporting", response.body
+  end
+
+  test "POST create persists cached flag when upstream says cached" do
     stub_request(:post, "#{@base_url}/api/v1/estimate")
       .to_return(
         status: 200,
@@ -70,21 +114,27 @@ class EstimationsControllerTest < ActionDispatch::IntegrationTest
         headers: { "Content-Type" => "application/json" }
       )
 
-    post estimation_path, params: @valid_params
-    assert_response :success
+    post estimations_path, params: @valid_params
+    estimation = Estimation.order(:created_at).last
+    assert_equal true, estimation.cached
+
+    follow_redirect!
     assert_match "cached", response.body
   end
 
-  test "POST create with invalid params re-renders new with 422" do
+  test "POST create with invalid params re-renders new with 422 and does not persist" do
     bad = @valid_params.deep_dup
     bad[:estimation_request][:description] = "too short"
 
-    post estimation_path, params: bad
+    assert_no_difference -> { Estimation.count } do
+      post estimations_path, params: bad
+    end
+
     assert_response :unprocessable_entity
     assert_select "form"
   end
 
-  test "POST create handles GuardrailViolation from upstream" do
+  test "POST create handles GuardrailViolation from upstream without persisting" do
     stub_request(:post, "#{@base_url}/api/v1/estimate")
       .to_return(
         status: 400,
@@ -92,25 +142,34 @@ class EstimationsControllerTest < ActionDispatch::IntegrationTest
         headers: { "Content-Type" => "application/json" }
       )
 
-    post estimation_path, params: @valid_params
+    assert_no_difference -> { Estimation.count } do
+      post estimations_path, params: @valid_params
+    end
+
     assert_response :unprocessable_entity
     assert_match "prompt_injection", response.body
   end
 
-  test "POST create handles ServerError from upstream" do
+  test "POST create handles ServerError from upstream without persisting" do
     stub_request(:post, "#{@base_url}/api/v1/estimate")
       .to_return(status: 502, body: { detail: "boom" }.to_json,
                  headers: { "Content-Type" => "application/json" })
 
-    post estimation_path, params: @valid_params
+    assert_no_difference -> { Estimation.count } do
+      post estimations_path, params: @valid_params
+    end
+
     assert_response :service_unavailable
     assert_match "AI service unavailable", response.body
   end
 
-  test "POST create handles connection failure" do
+  test "POST create handles connection failure without persisting" do
     stub_request(:post, "#{@base_url}/api/v1/estimate").to_timeout
 
-    post estimation_path, params: @valid_params
+    assert_no_difference -> { Estimation.count } do
+      post estimations_path, params: @valid_params
+    end
+
     assert_response :service_unavailable
     assert_match "AI service unavailable", response.body
   end

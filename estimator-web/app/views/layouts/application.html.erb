@@ -27,6 +27,12 @@
                 class: "h-7 w-auto" %>
         <% end %>
         <span class="text-white font-bold tracking-tight text-lg">Estimator</span>
+        <nav class="ml-auto flex items-center gap-4 text-sm">
+          <%= link_to "Nueva estimación", new_estimation_path,
+                class: "font-bold tracking-tight text-white/80 hover:text-white" %>
+          <%= link_to "Estimaciones", estimations_path,
+                class: "font-bold tracking-tight text-white/80 hover:text-white" %>
+        </nav>
       </div>
     </header>
 

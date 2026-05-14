@@ -36,7 +36,7 @@ module EstimatorAi
       }
     end
 
-    test "returns EstimationResponse on 200 with structured body" do
+    test "returns raw Hash payload on 200 with structured body" do
       stub_request(:post, "http://ai-test/api/v1/estimate")
         .with(body: @request.to_payload.to_json)
         .to_return(
@@ -45,14 +45,13 @@ module EstimatorAi
           headers: { "Content-Type" => "application/json" }
         )
 
-      response = @client.estimate(@request)
+      payload = @client.estimate(@request)
 
-      assert_kind_of EstimationResponse, response
-      assert_equal "v1", response.prompt_version
-      assert_equal false, response.cached
-      assert_kind_of EstimationResult, response.result
-      assert_equal 25_000, response.result.total_cost_eur
-      assert_equal 2, response.result.phases.size
+      assert_kind_of Hash, payload
+      assert_equal "v1", payload["prompt_version"]
+      assert_equal false, payload["cached"]
+      assert_equal 25_000, payload.dig("result", "total_cost_eur")
+      assert_equal 2, payload.dig("result", "phases").size
     end
 
     test "cached flag is propagated from the API" do
@@ -63,8 +62,8 @@ module EstimatorAi
           headers: { "Content-Type" => "application/json" }
         )
 
-      response = @client.estimate(@request)
-      assert_equal true, response.cached
+      payload = @client.estimate(@request)
+      assert_equal true, payload["cached"]
     end
 
     test "raises GuardrailViolation on 400 with prompt_injection reason" do

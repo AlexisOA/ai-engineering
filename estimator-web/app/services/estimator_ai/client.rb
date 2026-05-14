@@ -26,7 +26,7 @@ module EstimatorAi
 
       case response.status
       when 200
-        EstimationResponse.from_hash(response.body)
+        response.body
       when 400
         detail = extract_detail(response.body)
         reason = detail.is_a?(Hash) ? detail["reason"] : nil
