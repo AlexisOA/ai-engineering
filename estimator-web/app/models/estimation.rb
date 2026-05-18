@@ -1,4 +1,6 @@
 class Estimation < ApplicationRecord
+  belongs_to :chat_session, optional: true
+
   validates :description, :project_type, :detail_level, :output_format, presence: true
 
   def to_response

@@ -149,5 +149,122 @@ module EstimatorAi
       bad = EstimationRequest.new
       assert_raises(ArgumentError) { @client.estimate(bad) }
     end
+
+    # --- Session 5: conversational endpoints ---------------------------------
+
+    test "create_session POSTs /sessions and returns the body" do
+      stub_request(:post, "http://ai-test/sessions")
+        .to_return(status: 201, body: { session_id: "abc-123" }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      body = @client.create_session
+      assert_equal "abc-123", body["session_id"]
+    end
+
+    test "create_session raises ServerError when status is not 201" do
+      stub_request(:post, "http://ai-test/sessions").to_return(status: 500, body: "")
+      assert_raises(EstimatorAi::Client::ServerError) { @client.create_session }
+    end
+
+    test "get_session returns body and raises SessionNotFound on 404" do
+      stub_request(:get, "http://ai-test/sessions/abc")
+        .to_return(status: 200,
+                   body: { session_id: "abc", message_count: 4, metadata: { project_name: "X" } }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+      body = @client.get_session("abc")
+      assert_equal 4, body["message_count"]
+
+      stub_request(:get, "http://ai-test/sessions/missing").to_return(status: 404, body: "{}")
+      assert_raises(EstimatorAi::Client::SessionNotFound) { @client.get_session("missing") }
+    end
+
+    test "estimate_in_session without attachments POSTs urlencoded form" do
+      stub_request(:post, "http://ai-test/sessions/abc/estimate")
+        .with do |req|
+          req.headers["Content-Type"].to_s.include?("application/x-www-form-urlencoded") &&
+            req.body.to_s.include?("project_type=web_saas")
+        end
+        .to_return(
+          status: 200,
+          body: structured_body.merge(prompt_version: "v2").to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      req = SessionEstimationRequest.new(
+        transcript:   "Conversational transcript long enough to clear validation.",
+        project_type: "web_saas",
+        detail_level: "medium",
+        output_format: "phases_table"
+      )
+
+      payload = @client.estimate_in_session("abc", req)
+      assert_equal "v2", payload["prompt_version"]
+    end
+
+    test "estimate_in_session with attachments POSTs multipart/form-data" do
+      stub_request(:post, "http://ai-test/sessions/abc/estimate")
+        .with do |req|
+          req.headers["Content-Type"].to_s.start_with?("multipart/form-data") &&
+            req.body.to_s.include?("spec.pdf") &&
+            req.body.to_s.include?("Conversational transcript")
+        end
+        .to_return(
+          status: 200,
+          body: structured_body.merge(prompt_version: "v2").to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      req = SessionEstimationRequest.new(
+        transcript:   "Conversational transcript long enough to clear validation.",
+        project_type: "web_saas",
+        detail_level: "medium",
+        output_format: "phases_table"
+      )
+
+      tempfile = Tempfile.new([ "spec", ".pdf" ])
+      tempfile.write("%PDF-fake-bytes")
+      tempfile.rewind
+      upload = ActionDispatch::Http::UploadedFile.new(
+        tempfile: tempfile, filename: "spec.pdf", type: "application/pdf"
+      )
+
+      payload = @client.estimate_in_session("abc", req, attachments: [ upload ])
+      assert_equal "v2", payload["prompt_version"]
+    ensure
+      tempfile&.close
+      tempfile&.unlink
+    end
+
+    test "estimate_in_session raises SessionNotFound on 404" do
+      stub_request(:post, "http://ai-test/sessions/abc/estimate")
+        .to_return(status: 404, body: { detail: "session_not_found" }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      req = SessionEstimationRequest.new(
+        transcript:   "Conversational transcript long enough to clear validation.",
+        project_type: "web_saas",
+        detail_level: "medium",
+        output_format: "phases_table"
+      )
+      assert_raises(EstimatorAi::Client::SessionNotFound) { @client.estimate_in_session("abc", req) }
+    end
+
+    test "estimate_in_session surfaces guardrail violations like the transactional path" do
+      stub_request(:post, "http://ai-test/sessions/abc/estimate")
+        .to_return(status: 400,
+                   body: { detail: { reason: "pii", message: "email detected" } }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      req = SessionEstimationRequest.new(
+        transcript:   "Conversational transcript long enough to clear validation.",
+        project_type: "web_saas",
+        detail_level: "medium",
+        output_format: "phases_table"
+      )
+      err = assert_raises(EstimatorAi::Client::GuardrailViolation) do
+        @client.estimate_in_session("abc", req)
+      end
+      assert_includes err.message, "pii"
+    end
   end
 end

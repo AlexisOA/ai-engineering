@@ -181,6 +181,72 @@ class LLMWrapper:
         self.cache.set(cache_key, result)
         return {**result, "cache_hit": False}
 
+    def complete_structured_chat(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        response_model: type[T],
+        model_override: str | None = None,
+        max_tokens: int = 4000,
+        max_retries: int = 6,
+    ) -> tuple[T, dict[str, Any]]:
+        """Conversational variant of :meth:`complete_structured`.
+
+        Accepts a pre-built ``messages`` list (system + N user/assistant pairs +
+        current user). Bypasses the Router for deterministic routing — same
+        rationale as ``complete_structured``: the LiteLLM Router would
+        round-robin between deployments and could non-deterministically pick
+        the fallback. Instructor handles re-prompts when Pydantic validators
+        raise.
+        """
+        target_model = model_override or self.primary_model
+        api_key = (
+            self.anthropic_api_key
+            if _provider_from_model(target_model) == "anthropic"
+            else self.openai_api_key
+        )
+
+        log.info(
+            "llm_structured_chat_started",
+            model=target_model,
+            response_model=response_model.__name__,
+            messages=len(messages),
+        )
+        t0 = time.perf_counter()
+        try:
+            result = self._instructor.chat.completions.create(
+                model=target_model,
+                api_key=api_key,
+                timeout=self.timeout,
+                messages=messages,
+                response_model=response_model,
+                max_tokens=max_tokens,
+                max_retries=max_retries,
+            )
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            log.error(
+                "llm_structured_chat_failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+                latency_ms=latency_ms,
+            )
+            raise
+
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        meta = {
+            "model": _normalise_model_name(target_model),
+            "provider": _provider_from_model(target_model),
+            "latency_ms": latency_ms,
+        }
+        log.info(
+            "llm_structured_chat_completed",
+            model=meta["model"],
+            provider=meta["provider"],
+            latency_ms=latency_ms,
+        )
+        return result, meta
+
     def complete_structured(
         self,
         *,

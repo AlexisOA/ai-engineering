@@ -10,9 +10,18 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_05_14_120000) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_18_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "chat_sessions", force: :cascade do |t|
+    t.string "remote_session_id", null: false
+    t.jsonb "latest_metadata", default: {}, null: false
+    t.integer "turn_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["remote_session_id"], name: "index_chat_sessions_on_remote_session_id", unique: true
+  end
 
   create_table "estimations", force: :cascade do |t|
     t.text "description", null: false
@@ -24,6 +33,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_14_120000) do
     t.boolean "cached", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "chat_session_id"
+    t.index ["chat_session_id"], name: "index_estimations_on_chat_session_id"
     t.index ["created_at"], name: "index_estimations_on_created_at"
   end
+
+  add_foreign_key "estimations", "chat_sessions"
 end

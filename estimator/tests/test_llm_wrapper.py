@@ -126,6 +126,58 @@ def test_thinking_budget_pads_max_tokens_when_anthropic_override(wrapper: LLMWra
     assert kwargs["max_tokens"] == 4096 + 1024
 
 
+def test_complete_structured_chat_forwards_messages(wrapper: LLMWrapper) -> None:
+    """Conversational structured call: caller passes the full ``messages``
+    list (system + history + current user) and Instructor returns a Pydantic
+    model atomically."""
+    from pydantic import BaseModel
+
+    class _Answer(BaseModel):
+        text: str
+
+    messages = [
+        {"role": "system", "content": "you are an estimator"},
+        {"role": "user", "content": "first user"},
+        {"role": "assistant", "content": "first answer"},
+        {"role": "user", "content": "second user"},
+    ]
+
+    expected = _Answer(text="ok")
+    with patch.object(
+        wrapper._instructor.chat.completions, "create", return_value=expected
+    ) as mocked:
+        result, meta = wrapper.complete_structured_chat(
+            messages=messages,
+            response_model=_Answer,
+        )
+
+    assert result is expected
+    kwargs = mocked.call_args.kwargs
+    assert kwargs["messages"] is messages
+    assert kwargs["response_model"] is _Answer
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert meta["model"] == "gpt-4o-mini"
+    assert meta["provider"] == "openai"
+    assert "latency_ms" in meta
+
+
+def test_complete_structured_chat_uses_anthropic_key_for_claude(wrapper: LLMWrapper) -> None:
+    from pydantic import BaseModel
+
+    class _Answer(BaseModel):
+        text: str
+
+    with patch.object(
+        wrapper._instructor.chat.completions, "create", return_value=_Answer(text="x")
+    ) as mocked:
+        wrapper.complete_structured_chat(
+            messages=[{"role": "user", "content": "hi"}],
+            response_model=_Answer,
+            model_override="claude-haiku-4-5-20251001",
+        )
+    assert mocked.call_args.kwargs["api_key"] == "fake-anthropic"
+
+
 # test_complete_stream_yields_chunks_and_caches was removed in Session 4 when
 # the /api/v1/estimate/stream endpoint and the wrapper's complete_stream() method
 # were deleted. Structured output via Instructor (complete_structured) replaces
