@@ -35,26 +35,68 @@ class Message(BaseModel):
 
 
 class ConversationHistory(BaseModel):
-    """A sliding window of user/assistant pairs.
+    """A sliding window of user/assistant pairs, augmented with summary + anchors.
 
-    ``max_turns`` counts pairs (user+assistant). When the window is exceeded,
-    the oldest pairs are dropped from the front. The window invariant is
-    enforced after every ``append`` so callers never see an oversized history.
+    Three storage slots:
+
+    - ``messages``: the recent sliding window (last ``max_turns`` pairs).
+    - ``anchors``: turns flagged by ``AnchorDetector`` as durable commitments
+      (signed NDA, frozen scope, compliance context, …). Anchors live outside
+      the sliding window and are never evicted by it.
+    - ``summary``: a free-text cumulative summary of older non-anchor turns
+      that have already been folded away by the ``CompressionPolicy``.
+
+    ``to_messages()`` composes the three into the array the LLM sees:
+
+        [summary_envelope?] + anchors_in_order + recent_sliding_window
     """
 
     max_turns: int = Field(default=6, ge=1)
     messages: list[Message] = Field(default_factory=list)
+    anchors: list[Message] = Field(default_factory=list)
+    summary: str | None = Field(default=None)
 
     def append(self, *, user: str, assistant: str) -> None:
-        """Add one turn (user message + assistant message) and trim the window."""
+        """Add one turn (user message + assistant message).
+
+        Trim / anchor promotion / cumulative summary are NOT applied here —
+        that's the job of ``CompressionPolicy.apply`` (and its wrapper
+        ``apply_compression``). The service layer is responsible for invoking
+        compression after each append. Keeping the data structure dumb means
+        the policy is the single source of truth for the sliding window,
+        anchors and summary — there is exactly one place where the LLM is
+        called to decide what to forget.
+        """
         self.messages.append(Message(role="user", content=user))
         self.messages.append(Message(role="assistant", content=assistant))
-        self._trim()
 
     def to_messages(self) -> list[dict[str, str]]:
-        """Return the ``messages`` array ready to splice into the LLM call,
-        excluding any system prompt (the caller prepends that fresh each turn)."""
-        return [{"role": m.role, "content": m.content} for m in self.messages]
+        """Return the ``messages`` array ready to splice into the LLM call.
+
+        Order is intentional: the summary anchors the model in the early
+        conversation, anchors carry the irreducible commitments verbatim, and
+        the recent window provides the active turn-by-turn context. The caller
+        prepends a fresh ``system`` prompt on top.
+        """
+        out: list[dict[str, str]] = []
+        if self.summary:
+            # Wrap as a synthetic user message — most providers route this
+            # cleanly through any tool-use scaffolding, and the [Earlier...]
+            # bracket marks it visually so the model treats it as context.
+            out.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "[Earlier conversation summary — the recent turns "
+                        "below are the live thread]\n" + self.summary
+                    ),
+                }
+            )
+        for anchor in self.anchors:
+            out.append({"role": anchor.role, "content": anchor.content})
+        for m in self.messages:
+            out.append({"role": m.role, "content": m.content})
+        return out
 
     def _trim(self) -> None:
         max_messages = self.max_turns * 2
@@ -117,9 +159,15 @@ class Session(BaseModel):
     Lives in memory of the FastAPI process. State is lost on restart, which is
     intentional for the exercise — persistence enters with the live session's
     advanced topics.
+
+    ``last_resolved_tier`` and ``last_tier_rule`` cache the most recent tier
+    resolution so the GET /sessions/{id} endpoint can show the side panel
+    information without re-running the resolver.
     """
 
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     history: ConversationHistory = Field(default_factory=ConversationHistory)
     metadata: ProjectMetadata = Field(default_factory=ProjectMetadata)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_resolved_tier: str | None = None
+    last_tier_rule: str | None = None

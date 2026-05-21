@@ -33,7 +33,9 @@ from app.guardrails.input import check_input
 from app.guardrails.output import enforce_scope_response
 from app.prompts import render_estimation_prompt
 from app.prompts.loader import render_conversational_prompt
+from app.schemas.critic import CriticFeedback
 from app.schemas.estimation import (
+    ACBResponse,
     DetailLevel,
     EstimationRequest,
     EstimationResponse,
@@ -41,10 +43,14 @@ from app.schemas.estimation import (
     OutputFormat,
     ProjectType,
 )
+from app.services.boss import Boss
 from app.services.cache import EstimationCache
+from app.services.critic import Critic
 from app.services.llm_wrapper import LLMWrapper
+from app.sessions.compression import apply_compression
 from app.sessions.metadata_extractor import update_metadata
 from app.sessions.models import Session
+from app.sessions.tier_resolver import Tier, resolve_tier
 
 log = structlog.get_logger()
 
@@ -77,8 +83,12 @@ class EstimationService:
         semantic_cache: EstimationSemanticCache | None = None,
         openai_client: Any | None = None,
         prompt_version: str = "v1",
-        conversational_prompt_version: str = "v2",
+        conversational_prompt_version: str = "v3",
         metadata_extractor_model: str = "gpt-4o-mini",
+        compression_model: str = "gpt-4o-mini",
+        anchor_detection_mode: str = "heuristic",
+        critic_model: str = "gpt-4o-mini",
+        boss_max_iterations: int = 2,
     ) -> None:
         self.llm_wrapper = llm_wrapper
         self.exact_cache = exact_cache
@@ -87,6 +97,10 @@ class EstimationService:
         self.prompt_version = prompt_version
         self.conversational_prompt_version = conversational_prompt_version
         self.metadata_extractor_model = metadata_extractor_model
+        self.compression_model = compression_model
+        self.anchor_detection_mode = anchor_detection_mode
+        self.critic_model = critic_model
+        self.boss_max_iterations = boss_max_iterations
 
     def estimate(self, request: EstimationRequest) -> EstimationResponse:
         # 1. Input guardrails — raises InputGuardrailViolation on rejection.
@@ -162,6 +176,7 @@ class EstimationService:
         project_type: ProjectType,
         detail_level: DetailLevel,
         output_format: OutputFormat,
+        tier: Tier | None = None,
     ) -> EstimationResponse:
         """Multi-turn estimation pipeline (Session 5).
 
@@ -179,8 +194,18 @@ class EstimationService:
         #    already concatenated any extracted attachment text into it).
         check_input(transcript, openai_client=self.openai_client)
 
-        # 2. Render the conversational system + user prompts (v2 includes the
-        #    <project_metadata> block).
+        # 2. Resolve the audience tier. Override (when the caller passed one)
+        #    wins; otherwise the rule chain decides from transcript + metadata.
+        resolved_tier, rule = resolve_tier(
+            transcript=transcript,
+            metadata=session.metadata,
+            override=tier,
+        )
+        session.last_resolved_tier = resolved_tier.value
+        session.last_tier_rule = rule
+
+        # 3. Render the conversational system + user prompts. v3 carries the
+        #    <audience> block driven by the resolved tier; v2 ignores it.
         system_prompt, user_message = render_conversational_prompt(
             description=transcript,
             project_type=project_type,
@@ -188,6 +213,7 @@ class EstimationService:
             output_format=output_format,
             metadata=session.metadata,
             version=self.conversational_prompt_version,
+            tier=resolved_tier,
         )
 
         # 3. Build the messages array: fresh system + prior history (already
@@ -221,8 +247,16 @@ class EstimationService:
         # 5. Output guardrail (filter policy: normalises low-confidence answers).
         result = enforce_scope_response(result)
 
-        # 6. Append the turn to the history (sliding window auto-trims).
+        # 6. Append the turn to the history. The append is a pure data
+        #    operation now — compression (anchor promotion + cumulative
+        #    summary + sliding window) is the next, explicit step.
         session.history.append(user=user_message, assistant=result.model_dump_json())
+        apply_compression(
+            session.history,
+            llm_wrapper=self.llm_wrapper,
+            compression_model=self.compression_model,
+            anchor_detection_mode=self.anchor_detection_mode,
+        )
 
         # 7. Second-pass extractor refreshes ProjectMetadata. Failure is
         #    swallowed inside update_metadata (returns previous unchanged).
@@ -238,4 +272,120 @@ class EstimationService:
             result=result,
             prompt_version=self.conversational_prompt_version,
             cached=False,
+        )
+
+    def estimate_with_acb(
+        self,
+        *,
+        session: Session,
+        transcript: str,
+        project_type: ProjectType,
+        detail_level: DetailLevel,
+        output_format: OutputFormat,
+        tier: Tier | None = None,
+    ) -> ACBResponse:
+        """Actor-Critic-Boss variant of the conversational pipeline.
+
+        The session is updated **only** with the final Boss-approved (or
+        Boss-synthesized) result — intermediate actor drafts are throwaway.
+        That keeps the conversation state coherent: from the user's point of
+        view, the turn produced exactly one assistant message.
+        """
+
+        # 1. Input guardrail.
+        check_input(transcript, openai_client=self.openai_client)
+
+        # 2. Resolve tier (same as actor path).
+        resolved_tier, rule = resolve_tier(
+            transcript=transcript,
+            metadata=session.metadata,
+            override=tier,
+        )
+        session.last_resolved_tier = resolved_tier.value
+        session.last_tier_rule = rule
+
+        log.info(
+            "estimation_acb_request",
+            session_id=session.session_id,
+            tier=resolved_tier.value,
+            tier_rule=rule,
+            transcript_chars=len(transcript),
+        )
+
+        # 3. Build the actor callable. It re-renders the prompt each
+        #    iteration so that critic feedback (if any) is woven in. The
+        #    output guardrail runs on every actor draft; if a draft is
+        #    eventually accepted by the Boss, that same guardrailed result
+        #    is the one persisted to the session below.
+        def _actor(critic_feedback: CriticFeedback | None) -> EstimationResult:
+            system_prompt, user_message = render_conversational_prompt(
+                description=transcript,
+                project_type=project_type,
+                detail_level=detail_level,
+                output_format=output_format,
+                metadata=session.metadata,
+                version=self.conversational_prompt_version,
+                tier=resolved_tier,
+                critic_feedback=critic_feedback,
+            )
+            messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+            messages.extend(session.history.to_messages())
+            messages.append({"role": "user", "content": user_message})
+
+            draft, meta = self.llm_wrapper.complete_structured_chat(
+                messages=messages,
+                response_model=EstimationResult,
+            )
+            log.info(
+                "acb_actor_draft",
+                with_critic_feedback=critic_feedback is not None,
+                issues_in_feedback=(
+                    len(critic_feedback.issues) if critic_feedback is not None else 0
+                ),
+                confidence_pct=draft.confidence_pct,
+                total_cost_eur=draft.total_cost_eur,
+                **meta,
+            )
+            return enforce_scope_response(draft)
+
+        # 4. Build the critic callable.
+        critic = Critic(llm_wrapper=self.llm_wrapper, model=self.critic_model)
+
+        def _critic(draft: EstimationResult) -> CriticFeedback:
+            return critic.review(
+                transcript=transcript,
+                metadata=session.metadata,
+                tier=resolved_tier,
+                result=draft,
+            )
+
+        # 5. Boss orchestrates.
+        boss = Boss(max_iterations=self.boss_max_iterations)
+        final_result, trace = boss.run(actor=_actor, critic=_critic)
+
+        # 6. Persist the final result into the session (single turn append).
+        session.history.append(
+            user=transcript, assistant=final_result.model_dump_json()
+        )
+        apply_compression(
+            session.history,
+            llm_wrapper=self.llm_wrapper,
+            compression_model=self.compression_model,
+            anchor_detection_mode=self.anchor_detection_mode,
+        )
+
+        # 7. Refresh metadata from the final result.
+        session.metadata = update_metadata(
+            previous=session.metadata,
+            transcript=transcript,
+            result=final_result,
+            llm_wrapper=self.llm_wrapper,
+            model=self.metadata_extractor_model,
+        )
+
+        return ACBResponse(
+            result=final_result,
+            prompt_version=self.conversational_prompt_version,
+            cached=False,
+            acb=trace,
         )

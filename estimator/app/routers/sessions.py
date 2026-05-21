@@ -34,6 +34,7 @@ from app.config import get_settings
 from app.dependencies import get_estimation_service, get_session_store
 from app.guardrails.input import InputGuardrailViolation
 from app.schemas.estimation import (
+    ACBResponse,
     DetailLevel,
     EstimationResponse,
     OutputFormat,
@@ -42,6 +43,7 @@ from app.schemas.estimation import (
 from app.services.estimation import EstimationService
 from app.sessions.models import ProjectMetadata
 from app.sessions.store import SessionNotFoundError, SessionStore
+from app.sessions.tier_resolver import Tier
 
 log = structlog.get_logger()
 
@@ -57,6 +59,10 @@ class SessionInfoResponse(BaseModel):
     message_count: int
     max_turns: int
     metadata: ProjectMetadata
+    anchors_count: int = 0
+    summary_chars: int = 0
+    last_resolved_tier: str | None = None
+    last_tier_rule: str | None = None
 
 
 @router.post("", response_model=CreateSessionResponse, status_code=201)
@@ -82,20 +88,24 @@ def get_session(
         message_count=len(session.history.messages),
         max_turns=session.history.max_turns,
         metadata=session.metadata,
+        anchors_count=len(session.history.anchors),
+        summary_chars=len(session.history.summary or ""),
+        last_resolved_tier=session.last_resolved_tier,
+        last_tier_rule=session.last_tier_rule,
     )
 
 
-@router.post("/{session_id}/estimate", response_model=EstimationResponse)
-async def estimate_in_session(
+async def _resolve_session_and_enrich(
     session_id: str,
-    transcript: str = Form(..., min_length=20, max_length=80_000),
-    project_type: ProjectType = Form(...),
-    detail_level: DetailLevel = Form(...),
-    output_format: OutputFormat = Form(...),
-    attachments: list[UploadFile] = File(default_factory=list),
-    store: SessionStore = Depends(get_session_store),
-    service: EstimationService = Depends(get_estimation_service),
-) -> EstimationResponse:
+    transcript: str,
+    attachments: list[UploadFile],
+    store: SessionStore,
+):
+    """Shared prelude for both /estimate and /estimate-acb.
+
+    Returns ``(session, enriched_transcript)``. Raises ``HTTPException`` for
+    session/attachment problems; the caller wraps the LLM call separately.
+    """
     try:
         session = store.get_or_404(session_id)
     except SessionNotFoundError as exc:
@@ -138,7 +148,43 @@ async def estimate_in_session(
         enriched_transcript_chars=len(enriched),
         attachment_count=len(extracted),
     )
+    return session, enriched
 
+
+def _map_pipeline_errors(exc: Exception) -> HTTPException:
+    """Same mapping for both endpoints: input guardrail → 400, else → 502."""
+    if isinstance(exc, InputGuardrailViolation):
+        log.info(
+            "session_estimate_blocked_by_input_guardrail",
+            reason=exc.reason,
+            message=exc.message,
+        )
+        return HTTPException(
+            status_code=400, detail={"reason": exc.reason, "message": exc.message}
+        )
+    log.error(
+        "session_estimate_endpoint_error",
+        error=str(exc)[:400],
+        error_type=type(exc).__name__,
+    )
+    return HTTPException(status_code=502, detail="Upstream LLM call failed")
+
+
+@router.post("/{session_id}/estimate", response_model=EstimationResponse)
+async def estimate_in_session(
+    session_id: str,
+    transcript: str = Form(..., min_length=20, max_length=80_000),
+    project_type: ProjectType = Form(...),
+    detail_level: DetailLevel = Form(...),
+    output_format: OutputFormat = Form(...),
+    tier: Tier | None = Form(default=None),
+    attachments: list[UploadFile] = File(default_factory=list),
+    store: SessionStore = Depends(get_session_store),
+    service: EstimationService = Depends(get_estimation_service),
+) -> EstimationResponse:
+    session, enriched = await _resolve_session_and_enrich(
+        session_id, transcript, attachments, store
+    )
     try:
         return service.estimate_conversational(
             session=session,
@@ -146,22 +192,45 @@ async def estimate_in_session(
             project_type=project_type,
             detail_level=detail_level,
             output_format=output_format,
+            tier=tier,
         )
-    except InputGuardrailViolation as exc:
-        log.info(
-            "session_estimate_blocked_by_input_guardrail",
-            reason=exc.reason,
-            message=exc.message,
-        )
-        raise HTTPException(
-            status_code=400, detail={"reason": exc.reason, "message": exc.message}
-        ) from exc
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
-        log.error(
-            "session_estimate_endpoint_error",
-            error=str(exc)[:400],
-            error_type=type(exc).__name__,
+        raise _map_pipeline_errors(exc) from exc
+
+
+@router.post("/{session_id}/estimate-acb", response_model=ACBResponse)
+async def estimate_in_session_acb(
+    session_id: str,
+    transcript: str = Form(..., min_length=20, max_length=80_000),
+    project_type: ProjectType = Form(...),
+    detail_level: DetailLevel = Form(...),
+    output_format: OutputFormat = Form(...),
+    tier: Tier | None = Form(default=None),
+    attachments: list[UploadFile] = File(default_factory=list),
+    store: SessionStore = Depends(get_session_store),
+    service: EstimationService = Depends(get_estimation_service),
+) -> ACBResponse:
+    """Actor-Critic-Boss variant of /estimate.
+
+    Same multipart contract; the response carries an ``acb`` field with the
+    iteration trail (verdict, confidence, issues per round) so callers can
+    show the audit trail in their UI.
+    """
+    session, enriched = await _resolve_session_and_enrich(
+        session_id, transcript, attachments, store
+    )
+    try:
+        return service.estimate_with_acb(
+            session=session,
+            transcript=enriched,
+            project_type=project_type,
+            detail_level=detail_level,
+            output_format=output_format,
+            tier=tier,
         )
-        raise HTTPException(status_code=502, detail="Upstream LLM call failed") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _map_pipeline_errors(exc) from exc

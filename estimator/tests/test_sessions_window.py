@@ -58,22 +58,23 @@ def test_eight_turns_never_exceed_window(
         response = client.post(f"/sessions/{session_id}/estimate", data=body)
         assert response.status_code == 200, response.text
 
-    # 8 turns × 2 calls (estimation + extractor) = 16 chat_calls
-    assert len(fake_wrapper.chat_calls) == 16
-
-    # Inspect only the estimation calls (even indexes).
-    estimation_calls = fake_wrapper.chat_calls[::2]
+    # Each turn now triggers up to three LLM calls: estimation, extractor,
+    # and (after the window fills) the cumulative summarizer. Easier to
+    # filter by response_model than to count exactly.
+    estimation_calls = [c for c in fake_wrapper.chat_calls if c["response_model"] == "EstimationResult"]
     assert len(estimation_calls) == 8
 
-    # max_turns=3 → at most 3 user/assistant pairs from history,
-    # plus 1 system + 1 current user. Cap = 1 + 6 + 1 = 8.
+    # max_turns=3 → at most 3 user/assistant pairs from history. With the
+    # cumulative summary in front the upper bound is:
+    #   1 (system) + 1 (summary) + 0..N_anchors + 6 (recent) + 1 (current user) = 9
+    # without anchors (this scripted transcript stays plain).
     for idx, call in enumerate(estimation_calls):
-        assert len(call["messages"]) <= 8, (
+        assert len(call["messages"]) <= 9, (
             f"Estimation call {idx} sent {len(call['messages'])} messages; "
-            "the sliding window should cap it at 8."
+            "the sliding window + summary envelope should cap it at 9."
         )
 
-    # And the session history itself stays bounded:
+    # And the recent window stays bounded:
     session = store.get_or_404(session_id)
     assert len(session.history.messages) <= 3 * 2
 
