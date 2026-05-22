@@ -5,6 +5,26 @@
     <% if chat_session.persisted? %>
       <p class="text-xs text-white/70 font-mono break-all"><%= chat_session.remote_session_id %></p>
       <p class="text-xs text-white/50 mt-1">Turns: <%= chat_session.turn_count %></p>
+      <% snapshot = chat_session.remote_session_snapshot %>
+      <% if snapshot.present? %>
+        <div class="mt-2 space-y-1 text-xs text-white/70">
+          <% if snapshot["last_resolved_tier"].present? %>
+            <p>
+              Tier:
+              <span class="font-bold text-white"><%= snapshot["last_resolved_tier"] %></span>
+              <% if snapshot["last_tier_rule"].present? %>
+                <span class="text-white/50">(<%= snapshot["last_tier_rule"] %>)</span>
+              <% end %>
+            </p>
+          <% end %>
+          <% if (snapshot["anchors_count"] || 0).positive? %>
+            <p>Anchors kept: <span class="font-bold text-white"><%= snapshot["anchors_count"] %></span></p>
+          <% end %>
+          <% if (snapshot["summary_chars"] || 0).positive? %>
+            <p>Summary chars: <span class="font-bold text-white"><%= snapshot["summary_chars"] %></span></p>
+          <% end %>
+        </div>
+      <% end %>
     <% else %>
       <p class="text-xs text-white/50">No active session</p>
     <% end %>

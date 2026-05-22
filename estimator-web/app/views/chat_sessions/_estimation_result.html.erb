@@ -67,4 +67,36 @@
       </table>
     </div>
   <% end %>
+
+  <% acb = estimation.response_payload.is_a?(Hash) ? estimation.response_payload["acb"] : nil %>
+  <% if acb.is_a?(Hash) && acb["iterations"].is_a?(Array) %>
+    <% if acb["final_decision"] == "synthesize" %>
+      <div class="p-4 rounded-md bg-brand-strong/15 border border-brand-strong text-white">
+        <p class="font-bold text-brand mb-1">Audit caveats — review did not fully converge</p>
+        <p class="text-sm text-white/90">
+          The independent reviewer did not approve the estimation in the available iterations. The figures above are the actor's last draft with reduced confidence; see the "Open caveats" section in the summary and the trace below.
+        </p>
+      </div>
+    <% end %>
+    <details class="rounded-md border border-white/10 bg-ink/30 p-3">
+      <summary class="cursor-pointer text-xs uppercase tracking-tight text-white/70 font-bold">
+        Actor-Critic-Boss trace — final: <%= acb["final_decision"] %>,
+        <%= acb["iterations_run"] %> iteration(s)
+      </summary>
+      <ol class="mt-3 space-y-2 text-xs text-white/80">
+        <% acb["iterations"].each do |it| %>
+          <li class="rounded bg-ink/40 p-2">
+            <div class="font-bold text-white">
+              Iteration <%= it["iteration"] %> — verdict: <%= it["critic_verdict"] %>
+              <span class="text-white/50">(confidence <%= it["critic_confidence"] %>)</span>
+            </div>
+            <% Array(it["issue_summary"]).each do |issue_line| %>
+              <div class="mt-1 text-white/70 font-mono"><%= issue_line %></div>
+            <% end %>
+            <div class="mt-1 text-white/50">Boss decision: <%= it["decision_after"] %></div>
+          </li>
+        <% end %>
+      </ol>
+    </details>
+  <% end %>
 </div>

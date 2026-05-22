@@ -169,6 +169,58 @@ class ChatSessionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "POST with mode=acb hits /estimate-acb and persists the trace" do
+    stub_request(:post, "#{@base_url}/sessions")
+      .to_return(status: 201, body: { session_id: "remote-abc" }.to_json,
+                 headers: { "Content-Type" => "application/json" })
+
+    acb_payload = structured_body(prompt_version: "v3").merge(
+      acb: {
+        iterations: [ { iteration: 0, decision_after: "accept", critic_verdict: "accept",
+                        critic_confidence: 90, issue_summary: [] } ],
+        final_decision: "accept", iterations_run: 1
+      }
+    )
+    stub_request(:post, "#{@base_url}/sessions/remote-abc/estimate-acb")
+      .to_return(status: 200, body: acb_payload.to_json,
+                 headers: { "Content-Type" => "application/json" })
+    stub_request(:get, "#{@base_url}/sessions/remote-abc")
+      .to_return(status: 200, body: session_info_body.to_json,
+                 headers: { "Content-Type" => "application/json" })
+
+    get new_chat_session_path
+    chat_session = ChatSession.order(:created_at).last
+
+    post chat_session_path(chat_session), params: @valid_params.merge(mode: "acb")
+    estimation = Estimation.order(:created_at).last
+    assert_equal "accept", estimation.response_payload.dig("acb", "final_decision")
+    assert_redirected_to chat_session_path(chat_session)
+
+    follow_redirect!
+    assert_response :success
+    assert_match "Actor-Critic-Boss trace", response.body
+  end
+
+  test "POST with explicit tier forwards it to FastAPI" do
+    stub_request(:post, "#{@base_url}/sessions")
+      .to_return(status: 201, body: { session_id: "remote-abc" }.to_json,
+                 headers: { "Content-Type" => "application/json" })
+    stub_request(:get, "#{@base_url}/sessions/remote-abc")
+      .to_return(status: 200, body: session_info_body.to_json,
+                 headers: { "Content-Type" => "application/json" })
+
+    forwarded = stub_request(:post, "#{@base_url}/sessions/remote-abc/estimate")
+      .with { |req| req.body.to_s.include?("tier=executive") }
+      .to_return(status: 200, body: structured_body.to_json,
+                 headers: { "Content-Type" => "application/json" })
+
+    get new_chat_session_path
+    chat_session = ChatSession.order(:created_at).last
+
+    post chat_session_path(chat_session), params: @valid_params.merge(tier: "executive")
+    assert_requested forwarded
+  end
+
   test "root route renders the conversational page" do
     stub_request(:post, "#{@base_url}/sessions")
       .to_return(status: 201, body: { session_id: "remote-abc" }.to_json,

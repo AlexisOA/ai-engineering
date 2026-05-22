@@ -71,13 +71,47 @@
     </div>
   </div>
 
-  <div>
-    <%= f.label :output_format, class: "block text-sm font-bold mb-1 text-white/90" %>
-    <%= f.select :output_format,
-          SessionEstimationRequest::OUTPUT_FORMATS.map { |v| [ v.humanize, v ] },
-          {},
-          class: "w-full border border-white/20 rounded-md p-3 text-white bg-ink/40 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand [&>option]:bg-ink-dark [&>option]:text-white" %>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div>
+      <%= f.label :output_format, class: "block text-sm font-bold mb-1 text-white/90" %>
+      <%= f.select :output_format,
+            SessionEstimationRequest::OUTPUT_FORMATS.map { |v| [ v.humanize, v ] },
+            {},
+            class: "w-full border border-white/20 rounded-md p-3 text-white bg-ink/40 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand [&>option]:bg-ink-dark [&>option]:text-white" %>
+    </div>
+
+    <div>
+      <%= label_tag :tier, "Audience tier", class: "block text-sm font-bold mb-1 text-white/90" %>
+      <%= select_tag :tier,
+            options_for_select([
+              [ "Auto (resolve from context)", "auto" ],
+              [ "Executive", "executive" ],
+              [ "Project Manager", "pm" ],
+              [ "Developer", "developer" ],
+              [ "Default", "default" ]
+            ], "auto"),
+            class: "w-full border border-white/20 rounded-md p-3 text-white bg-ink/40 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand [&>option]:bg-ink-dark [&>option]:text-white" %>
+      <p class="text-xs text-white/50 mt-1">Auto detects NDA / compliance / team size and adapts the prompt.</p>
+    </div>
   </div>
+
+  <fieldset class="border border-white/10 rounded-md p-4">
+    <legend class="text-xs uppercase tracking-tight text-white/50 font-bold px-2">Estimation mode</legend>
+    <div class="flex gap-6 mt-1">
+      <label class="flex items-center gap-2 text-sm text-white/90 cursor-pointer">
+        <%= radio_button_tag :mode, "actor", true,
+              class: "accent-brand" %>
+        Actor only
+        <span class="text-xs text-white/50">(1 LLM call)</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-white/90 cursor-pointer">
+        <%= radio_button_tag :mode, "acb",
+              class: "accent-brand" %>
+        Actor-Critic-Boss
+        <span class="text-xs text-white/50">(2–5 LLM calls, audited)</span>
+      </label>
+    </div>
+  </fieldset>
 
   <div class="pt-2 flex items-center gap-4">
     <button type="submit"
@@ -94,9 +128,10 @@
       </svg>
     </button>
 
-    <%= button_to "New conversation", chat_session_path(chat_session), method: :delete,
-          class: "text-sm font-bold tracking-tight text-white/70 hover:text-white",
-          form: { class: "inline" } %>
+    <%= link_to "New conversation", chat_session_path(chat_session),
+          data: { turbo_method: :delete,
+                  turbo_confirm: "Discard the current conversation and start a new one?" },
+          class: "text-sm font-bold tracking-tight text-white/70 hover:text-white" %>
 
     <div data-form-loading-target="statusPanel"
          class="hidden p-3 rounded-md bg-ink/30 border border-white/10 flex items-center gap-3"

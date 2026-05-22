@@ -10,4 +10,10 @@ class ChatSession < ApplicationRecord
   def latest_metadata_hash
     latest_metadata.is_a?(Hash) ? latest_metadata : {}
   end
+
+  # Snapshot of the GET /sessions/:id response (tier, anchors, summary
+  # chars). Used by the side panel.
+  def remote_session_snapshot
+    runtime_snapshot.is_a?(Hash) ? runtime_snapshot : {}
+  end
 end

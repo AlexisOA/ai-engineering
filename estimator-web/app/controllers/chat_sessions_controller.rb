@@ -35,11 +35,21 @@ class ChatSessionsController < ApplicationController
     end
 
     attachments = Array(params[:attachments]).compact_blank
-    payload = EstimatorAi::Client.new.estimate_in_session(
-      @chat_session.remote_session_id,
-      @request,
-      attachments: attachments
-    )
+    tier = params[:tier].presence
+    mode = params[:mode].to_s == "acb" ? "acb" : "actor"
+    client = EstimatorAi::Client.new
+    payload =
+      if mode == "acb"
+        client.estimate_in_session_acb(
+          @chat_session.remote_session_id, @request,
+          attachments: attachments, tier: tier
+        )
+      else
+        client.estimate_in_session(
+          @chat_session.remote_session_id, @request,
+          attachments: attachments, tier: tier
+        )
+      end
 
     @estimation = @chat_session.estimations.create!(
       description:      @request.transcript,
@@ -115,6 +125,7 @@ class ChatSessionsController < ApplicationController
     info = EstimatorAi::Client.new.get_session(chat_session.remote_session_id)
     chat_session.update!(
       latest_metadata: info["metadata"] || {},
+      runtime_snapshot: info.except("metadata") || {},
       turn_count: (info["message_count"] || 0) / 2
     )
   rescue StandardError => e

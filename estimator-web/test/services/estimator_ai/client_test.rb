@@ -249,6 +249,53 @@ module EstimatorAi
       assert_raises(EstimatorAi::Client::SessionNotFound) { @client.estimate_in_session("abc", req) }
     end
 
+    test "estimate_in_session_acb hits the ACB endpoint and returns the acb trace" do
+      stub_request(:post, "http://ai-test/sessions/abc/estimate-acb")
+        .with do |req|
+          req.headers["Content-Type"].to_s.include?("application/x-www-form-urlencoded") &&
+            req.body.to_s.include?("project_type=web_saas") &&
+            req.body.to_s.include?("tier=executive")
+        end
+        .to_return(
+          status: 200,
+          body: structured_body.merge(
+            prompt_version: "v3",
+            acb: { iterations: [], final_decision: "accept", iterations_run: 1 }
+          ).to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      req = SessionEstimationRequest.new(
+        transcript:   "Conversational transcript long enough to clear validation.",
+        project_type: "web_saas",
+        detail_level: "medium",
+        output_format: "phases_table"
+      )
+
+      payload = @client.estimate_in_session_acb("abc", req, tier: "executive")
+      assert_equal "accept", payload.dig("acb", "final_decision")
+      assert_equal "v3", payload["prompt_version"]
+    end
+
+    test "estimate_in_session ignores tier when set to auto" do
+      stub_request(:post, "http://ai-test/sessions/abc/estimate")
+        .with do |req|
+          # 'tier=' must NOT appear because Auto means: let FastAPI derive it.
+          !req.body.to_s.include?("tier=")
+        end
+        .to_return(status: 200, body: structured_body.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      req = SessionEstimationRequest.new(
+        transcript:   "Conversational transcript long enough to clear validation.",
+        project_type: "web_saas",
+        detail_level: "medium",
+        output_format: "phases_table"
+      )
+      payload = @client.estimate_in_session("abc", req, tier: "auto")
+      assert_equal "v1", payload["prompt_version"]
+    end
+
     test "estimate_in_session surfaces guardrail violations like the transactional path" do
       stub_request(:post, "http://ai-test/sessions/abc/estimate")
         .to_return(status: 400,
