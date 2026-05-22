@@ -13,6 +13,7 @@ When the LLM violates a validator, Instructor re-prompts the model with the
 """
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -107,13 +108,47 @@ class EstimationResult(BaseModel):
         return self
 
 
+class TurnObservation(BaseModel):
+    """Per-turn telemetry attached to a conversational response.
+
+    Populated by ``estimate_conversational`` only; the non-conversational
+    endpoint leaves ``EstimationResponse.observation`` as ``None``. The stress
+    runner reads this field directly from the JSON response — no log parsing.
+
+    ``cache_hit_kind`` is always ``"none"`` for the conversational path
+    (sessions bypass both caches by design); the field is kept for symmetry
+    with the non-conversational endpoint and to document that choice.
+    """
+
+    turn_index: int = Field(ge=1)
+    session_id: str
+    enriched_transcript_chars: int = Field(ge=0)
+    attachments_total_chars: int = Field(ge=0)
+    messages_in_window: int = Field(ge=0)
+    anchors_count: int = Field(ge=0)
+    summary_chars: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)
+    cost_usd: float = Field(ge=0)
+    latency_ms: int = Field(ge=0)
+    cache_hit_kind: Literal["none", "exact", "semantic"] = "none"
+    last_resolved_tier: str | None = None
+
+
 class EstimationResponse(BaseModel):
     """Wraps the validated result, the prompt version that produced it, and
-    whether it came from a cache (exact or semantic)."""
+    whether it came from a cache (exact or semantic).
+
+    ``observation`` is populated only by the conversational endpoint
+    (``POST /sessions/{id}/estimate``). It carries the per-turn telemetry the
+    stress runner needs without contaminating the production contract — older
+    callers that ignore the field keep working.
+    """
 
     result: EstimationResult
     prompt_version: str
     cached: bool = False
+    observation: TurnObservation | None = None
 
 
 from app.schemas.acb import BossTrace  # noqa: E402

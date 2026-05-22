@@ -42,6 +42,7 @@ from app.schemas.estimation import (
     EstimationResult,
     OutputFormat,
     ProjectType,
+    TurnObservation,
 )
 from app.services.boss import Boss
 from app.services.cache import EstimationCache
@@ -177,6 +178,7 @@ class EstimationService:
         detail_level: DetailLevel,
         output_format: OutputFormat,
         tier: Tier | None = None,
+        attachments_total_chars: int = 0,
     ) -> EstimationResponse:
         """Multi-turn estimation pipeline (Session 5).
 
@@ -251,6 +253,10 @@ class EstimationService:
         #    operation now — compression (anchor promotion + cumulative
         #    summary + sliding window) is the next, explicit step.
         session.history.append(user=user_message, assistant=result.model_dump_json())
+        # Capture turn_index BEFORE compression: post-compression the sliding
+        # window plateaus at ``max_turns`` and ``len(messages) // 2`` would
+        # stop reflecting how many turns the session has actually seen.
+        turn_index = len(session.history.messages) // 2
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,
@@ -268,10 +274,33 @@ class EstimationService:
             model=self.metadata_extractor_model,
         )
 
+        # 8. Emit the unified per-turn observation. Single structured event
+        #    (rather than five log lines) makes the stress runner trivial: it
+        #    reads ``response.observation`` straight from the JSON and never
+        #    has to reconcile timestamps. ``cache_hit_kind`` is "none"
+        #    because the conversational path bypasses both caches by design.
+        observation = TurnObservation(
+            turn_index=max(1, turn_index),
+            session_id=session.session_id,
+            enriched_transcript_chars=len(transcript),
+            attachments_total_chars=attachments_total_chars,
+            messages_in_window=len(session.history.messages),
+            anchors_count=len(session.history.anchors),
+            summary_chars=len(session.history.summary or ""),
+            tokens_in=int(meta.get("tokens_in", 0) or 0),
+            tokens_out=int(meta.get("tokens_out", 0) or 0),
+            cost_usd=float(meta.get("cost_usd", 0.0) or 0.0),
+            latency_ms=int(meta.get("latency_ms", 0) or 0),
+            cache_hit_kind="none",
+            last_resolved_tier=session.last_resolved_tier,
+        )
+        log.info("turn_observed", **observation.model_dump())
+
         return EstimationResponse(
             result=result,
             prompt_version=self.conversational_prompt_version,
             cached=False,
+            observation=observation,
         )
 
     def estimate_with_acb(

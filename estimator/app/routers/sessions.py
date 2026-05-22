@@ -41,7 +41,7 @@ from app.schemas.estimation import (
     ProjectType,
 )
 from app.services.estimation import EstimationService
-from app.sessions.models import ProjectMetadata
+from app.sessions.models import ProjectMetadata, Session
 from app.sessions.store import SessionNotFoundError, SessionStore
 from app.sessions.tier_resolver import Tier
 
@@ -100,11 +100,16 @@ async def _resolve_session_and_enrich(
     transcript: str,
     attachments: list[UploadFile],
     store: SessionStore,
-):
+) -> tuple[Session, str, int]:
     """Shared prelude for both /estimate and /estimate-acb.
 
-    Returns ``(session, enriched_transcript)``. Raises ``HTTPException`` for
-    session/attachment problems; the caller wraps the LLM call separately.
+    Returns ``(session, enriched_transcript, attachments_total_chars)``. The
+    third element is the sum of raw extracted text across all attachments
+    (excluding the ``--- attachment: ... ---`` fences added by
+    ``enrich_transcript``); the stress runner uses it to feed the
+    ``attachments_total_chars`` field of ``TurnObservation`` without having
+    to re-do the math. Raises ``HTTPException`` for session/attachment
+    problems; the caller wraps the LLM call separately.
     """
     try:
         session = store.get_or_404(session_id)
@@ -141,14 +146,16 @@ async def _resolve_session_and_enrich(
             extracted.append((upload.filename, text))
 
     enriched = enrich_transcript(transcript=transcript, attachments=extracted)
+    attachments_total_chars = sum(len(text) for _, text in extracted)
     log.info(
         "session_estimate_received",
         session_id=session_id,
         transcript_chars=len(transcript),
         enriched_transcript_chars=len(enriched),
         attachment_count=len(extracted),
+        attachments_total_chars=attachments_total_chars,
     )
-    return session, enriched
+    return session, enriched, attachments_total_chars
 
 
 def _map_pipeline_errors(exc: Exception) -> HTTPException:
@@ -182,7 +189,7 @@ async def estimate_in_session(
     store: SessionStore = Depends(get_session_store),
     service: EstimationService = Depends(get_estimation_service),
 ) -> EstimationResponse:
-    session, enriched = await _resolve_session_and_enrich(
+    session, enriched, attachments_total_chars = await _resolve_session_and_enrich(
         session_id, transcript, attachments, store
     )
     try:
@@ -193,6 +200,7 @@ async def estimate_in_session(
             detail_level=detail_level,
             output_format=output_format,
             tier=tier,
+            attachments_total_chars=attachments_total_chars,
         )
     except HTTPException:
         raise
@@ -218,7 +226,7 @@ async def estimate_in_session_acb(
     iteration trail (verdict, confidence, issues per round) so callers can
     show the audit trail in their UI.
     """
-    session, enriched = await _resolve_session_and_enrich(
+    session, enriched, _attachments_total_chars = await _resolve_session_and_enrich(
         session_id, transcript, attachments, store
     )
     try:
