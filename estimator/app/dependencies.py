@@ -10,6 +10,9 @@ from openai import OpenAI
 
 from app.cache.semantic import EstimationSemanticCache
 from app.config import get_settings
+from app.ingestion.catalog import DataCatalog, load_catalog
+from app.ingestion.loaders.filesystem import FileSystemLoader
+from app.ingestion.parsers.registry import ParserRegistry, default_registry
 from app.services.cache import EstimationCache
 from app.services.estimation import EstimationService
 from app.services.llm_wrapper import LLMWrapper
@@ -100,6 +103,54 @@ def get_estimation_service() -> EstimationService:
         critic_model=settings.CRITIC_MODEL,
         boss_max_iterations=settings.BOSS_MAX_ITERATIONS,
     )
+
+
+def build_pseudonymizer(session):
+    """Build a :class:`ConsistentPseudonymizer` backed by Postgres.
+
+    Not a singleton — the mapping store wraps a Session, so callers (scripts,
+    BackgroundTasks, tests) must pass their own. The analyzer (singleton via
+    ``build_analyzer``) and the salt come from settings.
+    """
+    from app.ingestion.pii import (
+        ConsistentPseudonymizer,
+        PostgresMappingStore,
+        build_analyzer,
+    )
+
+    settings = get_settings()
+    return ConsistentPseudonymizer(
+        analyzer=build_analyzer(),
+        mapping_store=PostgresMappingStore(session),
+        salt=settings.PSEUDONYM_HASH_SALT,
+        faker_locale=settings.PSEUDONYM_FAKER_LOCALE,
+        language="es",
+    )
+
+
+@lru_cache
+def get_catalog() -> DataCatalog:
+    """Load and cache the data-source catalog (Session 6).
+
+    The catalog is read once at startup. Re-reading would invalidate the
+    decisions baked into the running pipeline; rolling a new catalog version
+    requires a process restart by design.
+    """
+    settings = get_settings()
+    return load_catalog(settings.CATALOG_PATH)
+
+
+@lru_cache
+def get_filesystem_loader() -> FileSystemLoader:
+    settings = get_settings()
+    return FileSystemLoader(data_root=settings.INGESTION_DATA_ROOT)
+
+
+@lru_cache
+def get_parser_registry() -> ParserRegistry:
+    """Registry of parsers available in this branch. XLSX/DOCX/PDF parsers
+    live in ``guides/session-06-reference/`` and are not registered here."""
+    return default_registry()
 
 
 @lru_cache

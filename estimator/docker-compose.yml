@@ -12,25 +12,34 @@ services:
     env_file:
       - .env
 
-    # Override REDIS_URL for the in-network Redis service. The .env value
-    # (redis://localhost:6379) is meant for running uvicorn outside Docker.
+    # Override service URLs for the in-network services. The .env values are
+    # meant for running uvicorn outside Docker.
     environment:
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql+psycopg://estimator:estimator@postgres:5432/estimator
 
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
     # Bind-mount the app/ directory so code changes are reflected immediately
-    # inside the container without rebuilding the image. Tests too, so we can
-    # run `pytest` against the live container during development.
+    # inside the container without rebuilding the image. Tests, data and alembic
+    # too: the live session adds ingest sources to data/seed/ and a migration
+    # under alembic/versions/, both expected to survive a container restart.
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
+      - ./data:/app/data
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
 
-    # Override the default CMD to enable auto-reload on file changes.
+    # Apply pending migrations on startup, then run uvicorn with auto-reload.
     # Remove --reload for production deployments.
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
     restart: unless-stopped
 
@@ -39,7 +48,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 5s
-      start_period: 10s
+      start_period: 30s
       retries: 3
 
   redis:
@@ -60,5 +69,30 @@ services:
       retries: 3
     restart: unless-stopped
 
+  postgres:
+    # pgvector/pgvector:pg16 ships the pgvector extension already compiled.
+    # In Session 6 we do NOT activate it (no ``CREATE EXTENSION vector``);
+    # Session 7 will run a follow-up migration that turns it on. Using this
+    # image now avoids recreating the container later.
+    image: pgvector/pgvector:pg16
+    container_name: estimator-postgres
+    environment:
+      POSTGRES_USER: estimator
+      POSTGRES_PASSWORD: estimator
+      POSTGRES_DB: estimator
+    ports:
+      # Port 5433 on the host to avoid colliding with the estimator-web
+      # Postgres (5432). Inside the network we still talk on 5432.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "estimator", "-d", "estimator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   redis_data:
+  postgres_data:

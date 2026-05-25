@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import estimations, sessions
+from app.routers import estimations, ingestion, sessions
 
 
 def configure_logging() -> None:
@@ -39,6 +39,20 @@ async def lifespan(app: FastAPI):
     configure_logging()
     log = structlog.get_logger()
     settings = get_settings()
+    # Session 6: fail fast on a malformed catalog rather than at the first
+    # ingestion request. Catalogs are versioned in git; a broken one is a
+    # deploy-time problem, not a request-time one.
+    try:
+        from app.dependencies import get_catalog
+        catalog = get_catalog()
+        log.info(
+            "catalog_loaded",
+            version=catalog.version,
+            sources_total=len(catalog.sources),
+            sources_included=len(catalog.included_sources()),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.error("catalog_load_failed", error=str(exc)[:400])
     log.info("application_started", environment=settings.APP_ENV)
     yield
     log.info("application_shutdown")
@@ -63,6 +77,7 @@ app.add_middleware(
 
 app.include_router(estimations.router)
 app.include_router(sessions.router)
+app.include_router(ingestion.router)
 
 
 @app.get("/health")
