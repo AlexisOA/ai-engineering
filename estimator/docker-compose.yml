@@ -16,12 +16,12 @@ services:
     # meant for running uvicorn outside Docker.
     environment:
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql+psycopg://estimator:estimator@postgres:5432/estimator
+      DATABASE_URL: postgresql+psycopg://estimator:estimator@estimator-postgres:5432/estimator
 
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
+      estimator-postgres:
         condition: service_healthy
 
     # Bind-mount the app/ directory so code changes are reflected immediately
@@ -69,7 +69,11 @@ services:
       retries: 3
     restart: unless-stopped
 
-  postgres:
+  # Service name is estimator-postgres (not plain "postgres") so it does not
+  # collide with estimator-web's own "postgres" service when the root
+  # docker-compose.yml pulls both subprojects in via `include:` (which forbids
+  # duplicate resource names across included files).
+  estimator-postgres:
     # pgvector/pgvector:pg16 ships the pgvector extension already compiled.
     # In Session 6 we do NOT activate it (no ``CREATE EXTENSION vector``);
     # Session 7 will run a follow-up migration that turns it on. Using this
@@ -85,7 +89,7 @@ services:
       # Postgres (5432). Inside the network we still talk on 5432.
       - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - estimator_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "estimator", "-d", "estimator"]
       interval: 10s
@@ -95,4 +99,4 @@ services:
 
 volumes:
   redis_data:
-  postgres_data:
+  estimator_postgres_data:
