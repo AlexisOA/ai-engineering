@@ -204,6 +204,63 @@ Los tres tests son de integración con `TestClient`, un `FakeLLMWrapper` que cap
 
 El cliente Rails (`estimator-web/`) se adaptó al flujo conversacional con un nuevo controller `ChatSessionsController` (rutas `/chat_sessions`, root re-apuntado aquí), un panel lateral con el `ProjectMetadata` actual, multipart vía `faraday-multipart` y un botón "Nueva conversación" que destruye el mirror local y arranca una sesión limpia. El endpoint transaccional `EstimationsController` se mantiene operativo para la demo histórica.
 
+## Sesión 7 — Pipeline de embeddings
+
+Primer paso hacia la búsqueda semántica: convertir presupuestos históricos (JSON) en vectores. El módulo nuevo vive en `app/embedding_pipeline/` y expone un único endpoint. **No se persiste nada todavía** — los vectores se generan en memoria y se devuelven por HTTP; la persistencia en pgvector entra en la Sesión 08.
+
+Piezas:
+
+- `chunker.py` (`JSONStructuralChunker`) — chunking **estructural**: un componente del presupuesto = un chunk. A cada chunk se le antepone una cabecera de contexto del presupuesto padre (proyecto, sector, tecnología) para que no pierda la pista de a quién pertenece. Cuenta tokens con `tiktoken`.
+- `embedder.py` (`OpenAIEmbedder`) — invoca `text-embedding-3-small` (1536 dims) en **batches** de 100, con reintento exponencial (1s/2s/4s) ante `RateLimitError` y logging por batch.
+- `router.py` — orquesta `chunk → embed → stats`.
+
+### Endpoint nuevo
+
+```
+POST /embeddings/ingest
+  Input  (IngestRequest):  {"budgets": [ <Budget>, ... ]}
+  Output (IngestResponse): {"chunks": [ <EmbeddedChunk>, ... ], "stats": {...}}
+  200 OK · 422 validación Pydantic · 500 error de la API de embeddings (mensaje genérico, detalle en logs)
+```
+
+Aparece en Swagger (`http://localhost:8000/docs`) y se puede invocar desde ahí con el sample de datos.
+
+Desde línea de comandos, alimentando los 15 presupuestos de ejemplo (`data/budgets_sample.json` es un array; el endpoint espera `{"budgets": [...]}`):
+
+```bash
+# httpie (envuelve el array en el campo "budgets")
+http POST :8000/embeddings/ingest budgets:=@data/budgets_sample.json
+
+# curl equivalente
+curl -s -X POST http://localhost:8000/embeddings/ingest \
+  -H 'Content-Type: application/json' \
+  -d "{\"budgets\": $(cat data/budgets_sample.json)}" | python -m json.tool | head -40
+```
+
+Con el sample: 15 presupuestos → 52 chunks → ~4.1k tokens → coste estimado ~$0.00008.
+
+### Script CLI `compare.py`
+
+Sanity check de los embeddings: embebe dos textos y devuelve su similitud coseno (calculada a mano, sin numpy). Reutiliza `OpenAIEmbedder`.
+
+```bash
+# Fuera del contenedor (desde estimator/, con el .env cargado):
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+
+# Dentro del contenedor (scripts/ está bind-montado en docker-compose.yml):
+docker compose exec estimator python scripts/compare.py \
+  --text-a "..." --text-b "..."
+```
+
+Los resultados de las tres parejas de validación del enunciado están en [`app/embedding_pipeline/SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
+
+### Dependencias y scope
+
+- Nueva dependencia: `tiktoken>=0.7.0` (`openai` ya estaba desde Sesión 01). No se añade numpy/scikit-learn; la coseno es stdlib.
+- **Fuera de scope** (lo veremos en directo): otras estrategias de chunking (recursive, semantic, hierarchical, late, contextual retrieval), comparativa de modelos de embeddings, enriquecimiento con LLM, persistencia vectorial y retrieval.
+
 ---
 
 > Este proyecto forma parte del **Master en AI Engineering** y es la base sobre la que se construye en directo el resto de la Sesión 04 (output estructurado, guardrails, cache semántico) y de la Sesión 05 (compresión avanzada de memoria con anclas, tier dinámico, patrón Actor-Critic-Boss).

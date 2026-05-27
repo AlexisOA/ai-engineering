@@ -23,7 +23,7 @@ sources:
   - name: presupuestos_json
     description: >
       Presupuestos firmados 2024 en formato JSON. Cada fichero un presupuesto.
-      Fuente principal para el módulo de retrieval del Proyecto 2.
+      Fuente principal para el módulo de retrieval del Proyecto.
     location: budgets
     owners: ["comercial@empresa.local"]
     format: json

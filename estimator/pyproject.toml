@@ -24,6 +24,8 @@ dependencies = [
     "pypdf>=4.0",
     "python-docx>=1.1",
     "fpdf2>=2.7",
+    # Session 7 — embedding pipeline (tiktoken for token counting; openai already above)
+    "tiktoken>=0.7.0",
     # Session 6 — data-driven AI
     "pandas>=2.2",
     "pandera>=0.20",
