@@ -9,6 +9,7 @@ goes undetected. This module is the single place that wires Presidio to
 The live session uses this module by first SHOWING the failure with the
 default configuration and THEN replacing it with this one.
 """
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -35,9 +36,7 @@ def build_analyzer() -> AnalyzerEngine:
     provider = NlpEngineProvider(
         nlp_configuration={
             "nlp_engine_name": "spacy",
-            "models": [
-                {"lang_code": "es", "model_name": settings.PRESIDIO_SPACY_MODEL}
-            ],
+            "models": [{"lang_code": "es", "model_name": settings.PRESIDIO_SPACY_MODEL}],
         }
     )
     engine = AnalyzerEngine(

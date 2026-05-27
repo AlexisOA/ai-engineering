@@ -18,6 +18,7 @@ Two pieces, straight from Article 1:
 Fine-tuning is deliberately absent: it is an orthogonal layer (it teaches *how*
 to answer, it does not add *new data* nor solve traceability).
 """
+
 from __future__ import annotations
 
 import sys
@@ -37,9 +38,9 @@ _CACHE_FRIENDLY_REFRESH_DAYS = 7
 class CAGViability:
     """The four CAG constraints. ``viable`` is an AND of all four."""
 
-    context_window_ok: bool      # ¿cabe el corpus completo en el context window?
-    cost_ok: bool                # ¿el coste por turno con prefix caching es asumible?
-    latency_ok: bool             # ¿la latencia con el corpus completo se queda bajo SLO?
+    context_window_ok: bool  # ¿cabe el corpus completo en el context window?
+    cost_ok: bool  # ¿el coste por turno con prefix caching es asumible?
+    latency_ok: bool  # ¿la latencia con el corpus completo se queda bajo SLO?
     lost_in_the_middle_ok: bool  # ¿los benchmarks muestran que el modelo USA el centro?
 
     @property
@@ -70,18 +71,18 @@ class CAGViability:
 @dataclass
 class CorpusProfile:
     name: str
-    estimated_tokens: int            # volumen total estimado
-    refresh_frequency_days: float    # cada cuánto cambian los datos
-    traceability_required: bool      # ¿hay que poder citar la fuente?
-    access_control_required: bool    # ¿hay que filtrar por permisos por usuario?
+    estimated_tokens: int  # volumen total estimado
+    refresh_frequency_days: float  # cada cuánto cambian los datos
+    traceability_required: bool  # ¿hay que poder citar la fuente?
+    access_control_required: bool  # ¿hay que filtrar por permisos por usuario?
 
 
 @dataclass
 class ModelProfile:
     name: str
-    context_window: int       # tokens
+    context_window: int  # tokens
     cost_per_1k_input: float  # USD
-    prefix_caching: bool      # ¿soporta caché de prefijo?
+    prefix_caching: bool  # ¿soporta caché de prefijo?
 
 
 def assess_cag_viability(corpus: CorpusProfile, model: ModelProfile) -> CAGViability:
@@ -129,8 +130,8 @@ def recommend_architecture(
 
 PROYECTO_2 = CorpusProfile(
     name="Proyecto 2",
-    estimated_tokens=250_000,    # presupuestos + transcripciones + tarifas + adendas
-    refresh_frequency_days=7,    # cierre comercial semanal
+    estimated_tokens=250_000,  # presupuestos + transcripciones + tarifas + adendas
+    refresh_frequency_days=7,  # cierre comercial semanal
     traceability_required=True,  # legal exige citar la fuente
     access_control_required=True,  # info confidencial cliente
 )

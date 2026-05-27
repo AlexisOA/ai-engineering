@@ -69,7 +69,5 @@ class CriticFeedback(BaseModel):
                     "severity in {critical, major}; minor-only issues should accept"
                 )
         if self.verdict == "reject" and not self.issues:
-            raise ValueError(
-                "verdict 'reject' requires at least one issue describing why"
-            )
+            raise ValueError("verdict 'reject' requires at least one issue describing why")
         return self

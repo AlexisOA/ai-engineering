@@ -5,6 +5,7 @@ are not on the hot user request path — they run as BackgroundTasks or one-shot
 admin operations — so we trade async ergonomics for simplicity and less
 moving infrastructure during teaching.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

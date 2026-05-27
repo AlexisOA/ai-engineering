@@ -5,6 +5,7 @@ The key design choice: we render each budget to **structured markdown**, not
 markdown gives the embedder semantic anchors (## Cliente, ## Total, ## Fases)
 that a raw JSON dump lacks. The numbers stay; only the framing changes.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,9 +20,7 @@ from app.ingestion.parsers.protocol import ParseContext
 class BudgetJsonParser:
     supported_formats: ClassVar[set[str]] = {"json"}
 
-    def parse(
-        self, blob: LoadedBlob, context: ParseContext
-    ) -> Iterable[Document]:
+    def parse(self, blob: LoadedBlob, context: ParseContext) -> Iterable[Document]:
         payload = json.loads(blob.bytes_)
         text = _render_budget_markdown(payload)
         doc_id = f"{context.source.name}:{payload['budget_id']}:{blob.relative_path}"
@@ -67,10 +66,7 @@ def _render_budget_markdown(payload: dict) -> str:
     lines.append("")
 
     lines.append("## Total")
-    lines.append(
-        f"- Importe: {payload.get('total_amount', '?')} "
-        f"{payload.get('currency', '?')}"
-    )
+    lines.append(f"- Importe: {payload.get('total_amount', '?')} {payload.get('currency', '?')}")
     lines.append(f"- Firmado: {payload.get('signed_at', '-')}")
     lines.append("")
 

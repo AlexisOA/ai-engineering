@@ -6,6 +6,7 @@ Resolves the ``CatalogSource.location`` against the project's
 A non-existent location is a hard error: a catalog that points nowhere is
 silently wrong, the worst kind of broken.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

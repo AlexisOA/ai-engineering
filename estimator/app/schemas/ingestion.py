@@ -3,6 +3,7 @@
 The API has two endpoints (POST + GET) and three response shapes. Keeping them
 in one module makes the contract easy to read against the router code.
 """
+
 from __future__ import annotations
 
 import uuid

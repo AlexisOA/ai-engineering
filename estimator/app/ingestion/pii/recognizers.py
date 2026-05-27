@@ -11,6 +11,7 @@ matches that should land with a confidence score close to 1.0. We declare them
 with ``supported_language="es"`` so they activate alongside the Spanish NLP
 pipeline configured in ``analyzer.build_analyzer``.
 """
+
 from __future__ import annotations
 
 from presidio_analyzer import Pattern, PatternRecognizer

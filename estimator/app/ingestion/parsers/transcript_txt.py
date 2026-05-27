@@ -13,6 +13,7 @@ format heuristically and produces a different ``Document`` granularity:
 The two paths produce the same ``Document`` shape; only the granularity and
 ``extra`` keys differ.
 """
+
 from __future__ import annotations
 
 import re
@@ -32,9 +33,7 @@ _TURN_RE = re.compile(
 class TranscriptTxtParser:
     supported_formats: ClassVar[set[str]] = {"txt"}
 
-    def parse(
-        self, blob: LoadedBlob, context: ParseContext
-    ) -> Iterable[Document]:
+    def parse(self, blob: LoadedBlob, context: ParseContext) -> Iterable[Document]:
         text = blob.bytes_.decode("utf-8", errors="replace")
         if _has_speaker_tags(text):
             yield from self._parse_tagged(text, blob, context)
@@ -56,11 +55,15 @@ class TranscriptTxtParser:
             yield Document(
                 id=f"{context.source.name}:{blob.relative_path}:turn-{idx:04d}",
                 text=content,
-                metadata=_meta(blob, context, extra={
-                    "speaker": speaker,
-                    "timestamp": timestamp,
-                    "format_mode": "tagged",
-                }),
+                metadata=_meta(
+                    blob,
+                    context,
+                    extra={
+                        "speaker": speaker,
+                        "timestamp": timestamp,
+                        "format_mode": "tagged",
+                    },
+                ),
             )
 
     def _parse_legacy(
@@ -71,10 +74,14 @@ class TranscriptTxtParser:
             yield Document(
                 id=f"{context.source.name}:{blob.relative_path}:block-{idx:04d}",
                 text=block,
-                metadata=_meta(blob, context, extra={
-                    "format_mode": "legacy",
-                    "block_index": idx,
-                }),
+                metadata=_meta(
+                    blob,
+                    context,
+                    extra={
+                        "format_mode": "legacy",
+                        "block_index": idx,
+                    },
+                ),
             )
 
 

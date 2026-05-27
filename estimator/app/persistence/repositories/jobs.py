@@ -4,6 +4,7 @@ A job moves through ``pending → running → completed | failed``. The router
 creates the row, the BackgroundTask transitions it, the GET endpoint reads it.
 We never expose ORM types — callers see plain dataclasses.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -89,9 +90,7 @@ def list_jobs(session: Session, *, limit: int = 50) -> list[Job]:
     """Debug helper used by tests and the preflight; not exposed via HTTP."""
     rows = (
         session.execute(
-            select(IngestionJobRow)
-            .order_by(IngestionJobRow.started_at.desc())
-            .limit(limit)
+            select(IngestionJobRow).order_by(IngestionJobRow.started_at.desc()).limit(limit)
         )
         .scalars()
         .all()

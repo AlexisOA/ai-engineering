@@ -10,6 +10,7 @@ ingestion pipeline trusts*. Three decisions are valid:
 * ``exclude`` — explicitly out. A ``decision_reason`` is mandatory: excluding a
   source is a defensible call, not a silent omission.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -83,9 +84,7 @@ class CatalogSource(BaseModel):
     @model_validator(mode="after")
     def _decision_requires_reason_when_not_include(self) -> "CatalogSource":
         if self.decision is not CatalogDecision.INCLUDE and not self.decision_reason:
-            raise ValueError(
-                f"decision={self.decision.value} requires a non-empty decision_reason"
-            )
+            raise ValueError(f"decision={self.decision.value} requires a non-empty decision_reason")
         return self
 
 

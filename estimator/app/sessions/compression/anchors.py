@@ -34,13 +34,32 @@ log = structlog.get_logger()
 # The list is intentionally short — we'd rather miss than over-anchor.
 _HEURISTIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("nda", re.compile(r"\b(nda|non[- ]?disclosure|under embargo|legal hold)\b", re.IGNORECASE)),
-    ("signed_contract", re.compile(r"\b(signed|countersigned)\s+(the\s+)?(contract|sow|msa|agreement)\b", re.IGNORECASE)),
-    ("scope_frozen", re.compile(r"\b(scope|backlog)\s+(is\s+)?(frozen|locked|final|fixed)\b", re.IGNORECASE)),
-    ("budget_locked", re.compile(r"\b(budget|cap|ceiling)\s+(is\s+)?(locked|fixed|approved|capped)\s+at\b", re.IGNORECASE)),
-    ("compliance", re.compile(r"\b(hipaa|gdpr|sox|pci[- ]?dss|fda|iso[- ]?27001)\b", re.IGNORECASE)),
+    (
+        "signed_contract",
+        re.compile(
+            r"\b(signed|countersigned)\s+(the\s+)?(contract|sow|msa|agreement)\b", re.IGNORECASE
+        ),
+    ),
+    (
+        "scope_frozen",
+        re.compile(r"\b(scope|backlog)\s+(is\s+)?(frozen|locked|final|fixed)\b", re.IGNORECASE),
+    ),
+    (
+        "budget_locked",
+        re.compile(
+            r"\b(budget|cap|ceiling)\s+(is\s+)?(locked|fixed|approved|capped)\s+at\b", re.IGNORECASE
+        ),
+    ),
+    (
+        "compliance",
+        re.compile(r"\b(hipaa|gdpr|sox|pci[- ]?dss|fda|iso[- ]?27001)\b", re.IGNORECASE),
+    ),
     ("deadline_hard", re.compile(r"\bhard\s+deadline\b|\bmust\s+go\s+live\s+by\b", re.IGNORECASE)),
     ("contractual", re.compile(r"\bcontractually\s+(bound|required|obliged)\b", re.IGNORECASE)),
-    ("explicit_commitment", re.compile(r"\b(we|the (client|customer))\s+(agreed|committed)\s+to\b", re.IGNORECASE)),
+    (
+        "explicit_commitment",
+        re.compile(r"\b(we|the (client|customer))\s+(agreed|committed)\s+to\b", re.IGNORECASE),
+    ),
 )
 
 

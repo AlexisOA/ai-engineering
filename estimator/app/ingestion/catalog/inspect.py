@@ -8,6 +8,7 @@ Run from the estimator root::
 
     python -m app.ingestion.catalog.inspect data/seed
 """
+
 from __future__ import annotations
 
 import sys

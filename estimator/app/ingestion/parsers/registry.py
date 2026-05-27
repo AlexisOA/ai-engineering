@@ -4,6 +4,7 @@ The registry is a simple dict in disguise. We keep it as a class to make the
 "only one parser per format" invariant enforceable and to give the orchestrator
 a single object to depend on.
 """
+
 from __future__ import annotations
 
 from app.ingestion.parsers.budget_json import BudgetJsonParser

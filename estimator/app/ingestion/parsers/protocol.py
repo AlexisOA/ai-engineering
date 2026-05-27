@@ -7,6 +7,7 @@ Why a Protocol instead of an abstract base class? Two reasons:
   inheriting from anything; any class with ``supported_formats`` and ``parse``
   satisfies the contract.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable

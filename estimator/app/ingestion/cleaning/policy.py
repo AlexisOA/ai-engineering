@@ -14,6 +14,7 @@ then route each failing row into one of three buckets:
 The ``report`` dict is JSON-serializable so it can sit next to the
 ``ingestion_jobs`` row in future migrations.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -27,16 +28,16 @@ from app.ingestion.cleaning.schemas import BudgetRecord
 # Which failure types belong in quarantine vs. discard. Quarantine = the row
 # CAN come back after manual review; discard = the row is structurally wrong.
 QUARANTINE_CHECKS = {
-    "not_nullable",                    # client_name was NA
+    "not_nullable",  # client_name was NA
     "no_default",
-    "column_in_dataframe",             # missing optional metadata column
+    "column_in_dataframe",  # missing optional metadata column
 }
 DISCARD_CHECKS = {
-    "in_range",                        # total_amount negative / too large
+    "in_range",  # total_amount negative / too large
     "less_than_or_equal_to",
     "greater_than_or_equal_to",
-    "isin",                            # currency not in {EUR,USD,GBP}
-    "str_matches",                     # malformed budget_id or client_code
+    "isin",  # currency not in {EUR,USD,GBP}
+    "str_matches",  # malformed budget_id or client_code
 }
 
 
@@ -76,9 +77,7 @@ def validate_with_policy(df: pd.DataFrame) -> ValidationResult:
         return _route_failures(df, err)
 
 
-def _route_failures(
-    df: pd.DataFrame, err: pa.errors.SchemaErrors
-) -> ValidationResult:
+def _route_failures(df: pd.DataFrame, err: pa.errors.SchemaErrors) -> ValidationResult:
     failure_cases = err.failure_cases.copy()
     indices_quarantine: set[int] = set()
     indices_discard: set[int] = set()

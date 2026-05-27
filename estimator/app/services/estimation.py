@@ -108,9 +108,7 @@ class EstimationService:
         check_input(request.description, openai_client=self.openai_client)
 
         # 2. Exact-match cache lookup.
-        cache_key = _exact_cache_key(
-            request, self.prompt_version, self.llm_wrapper.primary_model
-        )
+        cache_key = _exact_cache_key(request, self.prompt_version, self.llm_wrapper.primary_model)
         cached = self.exact_cache.get(cache_key)
         if cached:
             log.info("estimation_cache_hit", kind="exact", key_prefix=cache_key[:24])
@@ -131,9 +129,7 @@ class EstimationService:
                 )
 
         # 4. Render the versioned prompt.
-        system_prompt, user_message = render_estimation_prompt(
-            request, version=self.prompt_version
-        )
+        system_prompt, user_message = render_estimation_prompt(request, version=self.prompt_version)
 
         # 5. LLM call with Instructor + Pydantic validators (re-prompts on failure).
         result, meta = self.llm_wrapper.complete_structured(
@@ -165,9 +161,7 @@ class EstimationService:
             self.semantic_cache.store(request, result, self.prompt_version)
 
         # 8. Return.
-        return EstimationResponse(
-            result=result, prompt_version=self.prompt_version, cached=False
-        )
+        return EstimationResponse(result=result, prompt_version=self.prompt_version, cached=False)
 
     def estimate_conversational(
         self,
@@ -393,9 +387,7 @@ class EstimationService:
         final_result, trace = boss.run(actor=_actor, critic=_critic)
 
         # 6. Persist the final result into the session (single turn append).
-        session.history.append(
-            user=transcript, assistant=final_result.model_dump_json()
-        )
+        session.history.append(user=transcript, assistant=final_result.model_dump_json())
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,

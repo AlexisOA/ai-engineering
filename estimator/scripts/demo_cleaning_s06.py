@@ -14,6 +14,7 @@ Usage::
     # or, inside docker:
     docker compose exec estimator python scripts/demo_cleaning_s06.py
 """
+
 from __future__ import annotations
 
 import json

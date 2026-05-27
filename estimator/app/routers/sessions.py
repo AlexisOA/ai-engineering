@@ -166,9 +166,7 @@ def _map_pipeline_errors(exc: Exception) -> HTTPException:
             reason=exc.reason,
             message=exc.message,
         )
-        return HTTPException(
-            status_code=400, detail={"reason": exc.reason, "message": exc.message}
-        )
+        return HTTPException(status_code=400, detail={"reason": exc.reason, "message": exc.message})
     log.error(
         "session_estimate_endpoint_error",
         error=str(exc)[:400],

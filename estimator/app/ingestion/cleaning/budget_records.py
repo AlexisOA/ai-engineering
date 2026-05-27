@@ -22,6 +22,7 @@ Five steps, applied to a DataFrame whose schema we treat as **raw**:
    with the most recent ``signed_at``". That is a business decision, not a
    technical one — documenting it is part of the deliverable.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -57,9 +58,7 @@ def clean_budget_records(records: Iterable[dict]) -> pd.DataFrame:
 
     # 3. Date coercion (permissive)
     if "signed_at" in df.columns:
-        df["signed_at"] = pd.to_datetime(
-            df["signed_at"], errors="coerce", dayfirst=True
-        )
+        df["signed_at"] = pd.to_datetime(df["signed_at"], errors="coerce", dayfirst=True)
 
     # 4. Numeric coercion
     if "total_amount" in df.columns:
@@ -71,9 +70,7 @@ def clean_budget_records(records: Iterable[dict]) -> pd.DataFrame:
         # Sort so the latest signed_at lands LAST per budget_id, then drop earlier
         # rows. Reset index so downstream callers don't see surprising gaps.
         df = df.sort_values(by=["budget_id", "signed_at"], na_position="first")
-        df = df.drop_duplicates(subset=["budget_id"], keep="last").reset_index(
-            drop=True
-        )
+        df = df.drop_duplicates(subset=["budget_id"], keep="last").reset_index(drop=True)
 
     return df
 

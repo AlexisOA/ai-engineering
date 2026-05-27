@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
     # deploy-time problem, not a request-time one.
     try:
         from app.dependencies import get_catalog
+
         catalog = get_catalog()
         log.info(
             "catalog_loaded",

@@ -13,6 +13,7 @@ Two tables, both narrow and write-rare:
   to ``running``/``completed``/``failed``. The ``GET /ingestion/jobs/{id}``
   endpoint reads from here.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,9 +32,7 @@ class Base(DeclarativeBase):
 class PseudonymMappingRow(Base):
     __tablename__ = "pseudonym_mappings"
     __table_args__ = (
-        UniqueConstraint(
-            "entity_type", "original_hash", name="uq_mappings_entity_hash"
-        ),
+        UniqueConstraint("entity_type", "original_hash", name="uq_mappings_entity_hash"),
         Index("idx_mappings_lookup", "entity_type", "original_hash"),
     )
 
@@ -60,6 +59,4 @@ class IngestionJobRow(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

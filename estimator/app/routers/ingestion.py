@@ -5,6 +5,7 @@ records the job row, dispatches the orchestrator as a BackgroundTask, and
 returns 202 immediately. All ingestion logic lives in
 ``app.ingestion.orchestrator`` — the router never imports parsers.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -108,9 +109,7 @@ def create_ingestion_run(
         loader=loader,
         registry=registry,
     )
-    return IngestionRunResponse(
-        job_id=job.job_id, source_name=job.source_name, status=job.status
-    )
+    return IngestionRunResponse(job_id=job.job_id, source_name=job.source_name, status=job.status)
 
 
 @router.get("/jobs/{job_id}", response_model=IngestionJobView)

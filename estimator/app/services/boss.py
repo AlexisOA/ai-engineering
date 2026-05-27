@@ -69,8 +69,7 @@ class Boss:
                     critic_verdict=review.verdict,
                     critic_confidence=review.confidence_in_review,
                     issue_summary=[
-                        f"[{i.severity}] {i.category} @ {i.field_path}"
-                        for i in review.issues[:5]
+                        f"[{i.severity}] {i.category} @ {i.field_path}" for i in review.issues[:5]
                     ],
                 )
             )

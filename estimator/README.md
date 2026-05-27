@@ -256,10 +256,43 @@ docker compose exec estimator python scripts/compare.py \
 
 Los resultados de las tres parejas de validación del enunciado están en [`app/embedding_pipeline/SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
 
+### Comparativa de estrategias de chunking (sesión en vivo)
+
+Ocho estrategias de chunking tras una interfaz común (`app/embedding_pipeline/base.py::Chunker`): `structural`, `fixed_size`, `recursive`, `sentence_window`, `semantic`, `propositional`, `contextual_retrieval`, `hierarchical`. Viven en `app/embedding_pipeline/strategies/` (el estructural en `chunker.py`).
+
+```
+POST /embeddings/compare
+  Input:  {"budgets": [...], "queries": [...], "strategies": [...], "top_k": 3}
+  Output: {"stats_per_strategy": {...}, "queries_per_strategy": {...}}
+```
+
+CLI del comparador (la herramienta de las demos), que carga `data/budgets_sample.json` + `data/test_queries.json`:
+
+```bash
+# Estadísticos + coste de todas las estrategias
+uv run python scripts/compare_chunkers.py --strategies all --queries all --show-stats --show-cost
+
+# Top-k de una consulta para dos estrategias
+uv run python scripts/compare_chunkers.py --strategies sentence-window,structural \
+  --queries "OAuth authentication for fintech mobile app" --show-top-k 3
+
+# Comparar dimensiones del modelo (1536 vs 768 / Matryoshka)
+uv run python scripts/compare_chunkers.py --models small-1536,small-768
+
+# Generar el reporte de respaldo
+uv run python scripts/compare_chunkers.py --strategies all --queries all \
+  --show-stats --show-cost --output app/embedding_pipeline/COMPARISON_REPORT.md
+```
+
+Las estrategias `semantic`, `propositional` y `contextual_retrieval` llaman a APIs externas durante la ingesta (necesitan `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) y reportan su coste en `chunking_done`. `sentence_window` usa NLTK (`punkt`/`punkt_tab`, descarga perezosa). Nada se persiste todavía — la persistencia vectorial con pgvector entra en la **Sesión 08**.
+
 ### Dependencias y scope
 
-- Nueva dependencia: `tiktoken>=0.7.0` (`openai` ya estaba desde Sesión 01). No se añade numpy/scikit-learn; la coseno es stdlib.
-- **Fuera de scope** (lo veremos en directo): otras estrategias de chunking (recursive, semantic, hierarchical, late, contextual retrieval), comparativa de modelos de embeddings, enriquecimiento con LLM, persistencia vectorial y retrieval.
+- Dependencias del pre-ejercicio: `tiktoken>=0.7.0` (`openai` ya estaba desde Sesión 01).
+- Dependencias de la sesión en vivo: `langchain-text-splitters`, `langchain-experimental`, `langchain-openai`, `nltk` (`anthropic` ya estaba). No se añade numpy/scikit-learn ni `sentence-transformers`; la coseno y los percentiles son stdlib.
+- **Late chunking** se trata como concepto en el directo (no hay código ejecutable: requiere modelos con token-level embeddings que no son el del proyecto).
+- **Fuera de scope** → **Sesión 08**: persistencia vectorial (pgvector), búsqueda semántica / retrieval real y métricas formales de retrieval (recall@k, NDCG).
+- El guion del directo está en `guides/session-7-live-guide.md` (git-ignored, material de instructor).
 
 ---
 

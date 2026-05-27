@@ -36,12 +36,17 @@ class InputGuardrailViolation(Exception):
 # --- Prompt injection patterns ----------------------------------------------
 
 _PROMPT_INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"ignore\s+(previous|prior|all|the)\s+(instructions?|prompts?|rules?)", re.IGNORECASE),
+    re.compile(
+        r"ignore\s+(previous|prior|all|the)\s+(instructions?|prompts?|rules?)", re.IGNORECASE
+    ),
     re.compile(r"</?\s*(system|instructions?|prompt)\s*>", re.IGNORECASE),
     re.compile(r"new\s+instructions?\s*[:.\-]", re.IGNORECASE),
     re.compile(r"forget\s+(everything|all|previous)", re.IGNORECASE),
     re.compile(r"\byou\s+are\s+now\b", re.IGNORECASE),
-    re.compile(r"\bdisregard\b.{0,40}\b(instructions?|prompts?|rules?|context|previous|prior)", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r"\bdisregard\b.{0,40}\b(instructions?|prompts?|rules?|context|previous|prior)",
+        re.IGNORECASE | re.DOTALL,
+    ),
 ]
 
 # --- PII patterns -----------------------------------------------------------
@@ -92,9 +97,7 @@ def _extract_flagged_categories(result: Any) -> list[str]:
     if categories is None:
         return []
     # Pydantic v2 / OpenAI client v1 both expose ``model_dump`` or ``dict``.
-    data = (
-        categories.model_dump() if hasattr(categories, "model_dump") else categories.__dict__
-    )
+    data = categories.model_dump() if hasattr(categories, "model_dump") else categories.__dict__
     return [name for name, flagged in data.items() if flagged]
 
 
@@ -102,7 +105,9 @@ def _check_prompt_injection(description: str) -> None:
     for pattern in _PROMPT_INJECTION_PATTERNS:
         match = pattern.search(description)
         if match:
-            log.info("prompt_injection_detected", pattern=pattern.pattern, match=match.group(0)[:80])
+            log.info(
+                "prompt_injection_detected", pattern=pattern.pattern, match=match.group(0)[:80]
+            )
             raise InputGuardrailViolation(
                 f"Suspicious instruction-like text detected: {match.group(0)[:80]!r}",
                 reason="prompt_injection",

@@ -41,9 +41,12 @@ def estimated_cost_usd(total_tokens: int) -> float:
 class OpenAIEmbedder:
     """Thin wrapper over ``client.embeddings.create`` with batching + retries."""
 
-    def __init__(self, client: OpenAI, model: str = MODEL) -> None:
+    def __init__(self, client: OpenAI, model: str = MODEL, dimensions: int | None = None) -> None:
         self._client = client
         self._model = model
+        # When set, ask OpenAI to truncate the embedding to this many dimensions
+        # (Matryoshka). None = the model's native dimension (1536 for -3-small).
+        self._dimensions = dimensions
 
     def embed_one(self, text: str) -> list[float]:
         """Embed a single text. Used by the CLI compare script."""
@@ -82,7 +85,10 @@ class OpenAIEmbedder:
             if wait:
                 time.sleep(wait)
             try:
-                response = self._client.embeddings.create(model=self._model, input=texts)
+                kwargs = {"model": self._model, "input": texts}
+                if self._dimensions is not None:
+                    kwargs["dimensions"] = self._dimensions
+                response = self._client.embeddings.create(**kwargs)
                 return [item.embedding for item in response.data]
             except RateLimitError as exc:
                 last_error = exc

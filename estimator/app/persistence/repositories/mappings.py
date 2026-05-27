@@ -10,6 +10,7 @@ We rely on Postgres' UNIQUE constraint to enforce this: insert first, fall
 back to a SELECT when the insert conflicts. This is cheaper than a SELECT-
 then-INSERT race and survives concurrent writers without explicit locking.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -71,9 +72,7 @@ class MappingsRepository:
                 original_hash=original_hash,
                 pseudonym=pseudonym,
             )
-            .on_conflict_do_nothing(
-                index_elements=["entity_type", "original_hash"]
-            )
+            .on_conflict_do_nothing(index_elements=["entity_type", "original_hash"])
             .returning(PseudonymMappingRow)
         )
         row = self._session.execute(stmt).scalar_one_or_none()

@@ -14,6 +14,7 @@ Three guarantees:
 3. The function is *synchronous*. It is invoked from a FastAPI BackgroundTask;
    the HTTP layer wraps it in a session-scoped DB session.
 """
+
 from __future__ import annotations
 
 import uuid

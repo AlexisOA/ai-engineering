@@ -5,6 +5,7 @@ Reads a YAML file with ``yaml.safe_load``, validates it against
 all the heavy lifting (decision rules, duplicate detection) lives in the
 model, not here.
 """
+
 from __future__ import annotations
 
 import sys

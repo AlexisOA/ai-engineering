@@ -15,6 +15,7 @@ Reversibility lives in the mapping store, not here: deleting a row by
 ``(entity_type, original_hash)`` invalidates all future lookups for that
 value without touching the corpus.
 """
+
 from __future__ import annotations
 
 import hashlib

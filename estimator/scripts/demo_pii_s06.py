@@ -17,6 +17,7 @@ Usage::
     # or, inside docker:
     docker compose exec estimator python scripts/demo_pii_s06.py
 """
+
 from __future__ import annotations
 
 import os
@@ -58,8 +59,10 @@ def main() -> int:
     print(f"\n--- Mappings aplicados ({len(result.applied)}) ---")
     for m in result.applied[:12]:
         print(f"  {m.entity_type:14} → {m.pseudonym}")
-    print("\nMismo valor original → mismo pseudónimo en todo el documento "
-          "(consistencia por valor, no por chunk).")
+    print(
+        "\nMismo valor original → mismo pseudónimo en todo el documento "
+        "(consistencia por valor, no por chunk)."
+    )
     return 0
 
 

@@ -14,6 +14,7 @@ Three concerns, three modules:
   value → same pseudonym, across documents, across runs. Backed by a
   persistent :class:`MappingStore` so the operation is reversible (Art. 17).
 """
+
 from app.ingestion.pii.analyzer import build_analyzer
 from app.ingestion.pii.mapping_store import (
     InMemoryMappingStore,

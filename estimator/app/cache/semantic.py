@@ -106,9 +106,7 @@ class EstimationSemanticCache:
     # Lookup / store
     # ------------------------------------------------------------------
 
-    def lookup(
-        self, request: EstimationRequest, prompt_version: str
-    ) -> EstimationResult | None:
+    def lookup(self, request: EstimationRequest, prompt_version: str) -> EstimationResult | None:
         from redisvl.query import VectorQuery
         from redisvl.query.filter import Tag
 

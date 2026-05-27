@@ -69,9 +69,7 @@ class Settings(BaseSettings):
     # --- Session 6 fields (data-driven AI: persistence + ingestion + PII) ---
     # Postgres connection string. pgvector/pgvector:pg16 image; the extension
     # is dormant in S06 (no CREATE EXTENSION vector) and only activates in S07.
-    DATABASE_URL: str = (
-        "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
-    )
+    DATABASE_URL: str = "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
     # Where the YAML catalog lives. Resolved relative to the working directory.
     CATALOG_PATH: Path = Path("data/catalog/catalog.yaml")
     # Root where ``CatalogSource.location`` entries are resolved against.
@@ -84,13 +82,20 @@ class Settings(BaseSettings):
     # HMAC salt. Stored in env so it can be rotated independently of the code.
     PSEUDONYM_HASH_SALT: str = "change-me-in-prod"
 
+    # --- Session 7 live fields (chunking strategies that call external APIs) ---
+    # LLM that decomposes a component into atomic propositions (one call per
+    # component). A small/cheap model is enough.
+    PROPOSITIONAL_CHUNKER_MODEL: str = "gpt-4o-mini"
+    # Claude model used by Contextual Retrieval to situate each chunk inside its
+    # parent budget. Prompt caching makes the (large) parent document cheap to
+    # reuse across the chunks of the same budget.
+    CONTEXTUAL_CHUNKER_MODEL: str = "claude-sonnet-4-5"
+
     @model_validator(mode="after")
     def validate_at_least_one_api_key(self) -> "Settings":
         """LiteLLM may try either provider via fallback, so we require at least one key."""
         if not self.OPENAI_API_KEY and not self.ANTHROPIC_API_KEY:
-            raise ValueError(
-                "At least one of OPENAI_API_KEY or ANTHROPIC_API_KEY must be set"
-            )
+            raise ValueError("At least one of OPENAI_API_KEY or ANTHROPIC_API_KEY must be set")
         return self
 
 

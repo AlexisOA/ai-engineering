@@ -83,10 +83,7 @@ def _has_regulatory_context(ctx: ResolutionContext) -> bool:
 
 
 def _is_small_team(ctx: ResolutionContext) -> bool:
-    return (
-        ctx.metadata.assumed_team_size is not None
-        and ctx.metadata.assumed_team_size <= 2
-    )
+    return ctx.metadata.assumed_team_size is not None and ctx.metadata.assumed_team_size <= 2
 
 
 def _technical_audience(ctx: ResolutionContext) -> bool:

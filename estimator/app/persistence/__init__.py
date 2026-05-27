@@ -5,6 +5,7 @@ back the pseudonymization mapping table and the ingestion job tracker. Higher
 layers consume narrow repositories from ``app.persistence.repositories``; they
 never see SQLAlchemy types directly.
 """
+
 from app.persistence.database import (
     SessionLocal,
     create_engine_from_settings,

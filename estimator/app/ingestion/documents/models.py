@@ -9,6 +9,7 @@ sub-types per source.
 The ``id`` is the deterministic identifier the orchestrator assigns; it must be
 stable across re-ingestions so the downstream index can dedupe.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -9,6 +9,7 @@ that enforces ``sum(phases.amount) == total_amount``. The phase-level data lives
 in a parallel ``BudgetPhases`` schema kept narrow on purpose; here we only
 check what is visible on the flat record.
 """
+
 from __future__ import annotations
 
 import pandera.pandas as pa
