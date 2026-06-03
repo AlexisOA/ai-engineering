@@ -37,10 +37,10 @@ from openai import OpenAI  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.dependencies import ALL_STRATEGIES, build_chunkers  # noqa: E402
-from app.embedding_pipeline.comparison import ChunkingComparator  # noqa: E402
-from app.embedding_pipeline.embedder import OpenAIEmbedder  # noqa: E402
-from app.embedding_pipeline.schemas import Budget  # noqa: E402
-from app.embedding_pipeline.similarity import cosine_similarity  # noqa: E402
+from app.generation.rag.analysis.comparison import ChunkingComparator  # noqa: E402
+from app.generation.rag.embedding.embedder import OpenAIEmbedder  # noqa: E402
+from app.generation.rag.schemas import Budget  # noqa: E402
+from app.generation.rag.analysis.similarity import cosine_similarity  # noqa: E402
 
 DATA_DIR = ROOT / "data"
 BUDGETS_PATH = DATA_DIR / "budgets_sample.json"
@@ -143,7 +143,7 @@ def print_top_k(queries: dict, resolve_parents: bool, budgets: list[Budget]) -> 
 
 
 def _parent_index(budgets: list[Budget]) -> dict[str, str]:
-    from app.embedding_pipeline.chunker import serialize_budget
+    from app.generation.rag.chunking.structural import serialize_budget
 
     return {f"{b.budget_id}::parent": serialize_budget(b) for b in budgets}
 
@@ -157,7 +157,7 @@ def top1_cosine_avg(results: list) -> float:
 
 
 def run_models(model_arg: str, budgets: list[Budget]) -> None:
-    from app.embedding_pipeline.chunker import render_component_text
+    from app.generation.rag.chunking.structural import render_component_text
 
     variants = [v.strip() for v in model_arg.split(",") if v.strip()]
     # A few components to measure: two similar (auth) + one unrelated.

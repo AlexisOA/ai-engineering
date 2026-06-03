@@ -23,7 +23,7 @@ from app.ingestion.catalog.loader import load_catalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import default_registry
 from app.main import app
-from app.persistence.database import get_session
+from app.foundation.persistence.database import get_session
 
 
 class _InMemoryJob:
@@ -118,7 +118,7 @@ def ingestion_client(tmp_path, monkeypatch):
 
     # Replace JobsRepository everywhere the router and the BackgroundTask use it.
     monkeypatch.setattr(
-        "app.routers.ingestion.JobsRepository", _InMemoryJobsRepo
+        "app.api.ingestion.JobsRepository", _InMemoryJobsRepo
     )
 
     # The BackgroundTask body opens its own SessionLocal; short-circuit it.
@@ -126,7 +126,7 @@ def ingestion_client(tmp_path, monkeypatch):
         def close(self): pass
 
     monkeypatch.setattr(
-        "app.routers.ingestion.SessionLocal", lambda: _NullSession()
+        "app.api.ingestion.SessionLocal", lambda: _NullSession()
     )
 
     # Reset module-global state between tests.

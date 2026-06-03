@@ -6,6 +6,6 @@ Three conceptual layers, each in its own subpackage:
 * ``loaders`` + ``parsers`` — raw bytes → list[Document] (the canonical contract).
 * ``cleaning`` + ``pii`` — tabular validation and GDPR pseudonymization.
 
-The HTTP entry point lives in ``app.routers.ingestion``; the offline glue that
+The HTTP entry point lives in ``app.api.ingestion``; the offline glue that
 ties everything together lives in ``app.ingestion.orchestrator``.
 """

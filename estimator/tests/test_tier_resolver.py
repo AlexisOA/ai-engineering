@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from app.sessions.models import ProjectMetadata
-from app.sessions.tier_resolver import Tier, resolve_tier
+from app.generation.conversation.models import ProjectMetadata
+from app.generation.conversation.tier_resolver import Tier, resolve_tier
 
 
 def test_default_tier_for_neutral_input() -> None:

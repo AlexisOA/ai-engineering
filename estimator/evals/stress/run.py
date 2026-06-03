@@ -37,7 +37,7 @@ from typing import Any
 
 import httpx
 
-from app.schemas.estimation import TurnObservation
+from app.domain.schemas.estimation import TurnObservation
 from evals.stress.metrics import (
     CostBudgetMetric,
     LatencyBudgetMetric,
@@ -71,7 +71,7 @@ def _open_client(http_base_url: str | None) -> Iterator[httpx.Client | Any]:
 
     from app.dependencies import get_session_store
     from app.main import app
-    from app.sessions.store import SessionStore
+    from app.generation.conversation.store import SessionStore
 
     store = SessionStore(max_turns=6)
     app.dependency_overrides[get_session_store] = lambda: store

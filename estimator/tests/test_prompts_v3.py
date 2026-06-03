@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.prompts.loader import render_conversational_prompt
-from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
-from app.sessions.models import ProjectMetadata
-from app.sessions.tier_resolver import Tier
+from app.foundation.prompts.loader import render_conversational_prompt
+from app.domain.schemas.estimation import DetailLevel, OutputFormat, ProjectType
+from app.generation.conversation.models import ProjectMetadata
+from app.generation.conversation.tier_resolver import Tier
 
 
 def _render(tier: Tier | None = None, **kwargs):

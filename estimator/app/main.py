@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.embedding_pipeline.router import router as embeddings_router
-from app.routers import estimations, ingestion, sessions
+from app.api.embeddings import router as embeddings_router
+from app.api import estimations, ingestion, sessions
 
 
 def configure_logging() -> None:

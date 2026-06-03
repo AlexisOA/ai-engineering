@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.sessions.models import ConversationHistory, ProjectMetadata, Session
-from app.sessions.store import SessionNotFoundError, SessionStore
+from app.generation.conversation.models import ConversationHistory, ProjectMetadata, Session
+from app.generation.conversation.store import SessionNotFoundError, SessionStore
 
 
 def test_history_append_does_not_auto_trim() -> None:
@@ -25,8 +25,8 @@ def test_history_append_does_not_auto_trim() -> None:
 def test_history_compression_drops_oldest_non_anchor_pairs() -> None:
     """The sliding-window invariant is now enforced by CompressionPolicy."""
     from unittest.mock import MagicMock
-    from app.sessions.compression import apply_compression
-    from app.sessions.compression.summarizer import _SummaryEnvelope
+    from app.generation.conversation.compression import apply_compression
+    from app.generation.conversation.compression.summarizer import _SummaryEnvelope
 
     wrapper = MagicMock()
     wrapper.complete_structured_chat.return_value = (

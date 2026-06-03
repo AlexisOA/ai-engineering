@@ -7,11 +7,11 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.critic import CriticFeedback, CriticIssue
-from app.schemas.estimation import EstimationResult
-from app.services.critic import Critic
-from app.sessions.models import ProjectMetadata
-from app.sessions.tier_resolver import Tier
+from app.domain.schemas.critic import CriticFeedback, CriticIssue
+from app.domain.schemas.estimation import EstimationResult
+from app.generation.agentic.critic import Critic
+from app.generation.conversation.models import ProjectMetadata
+from app.generation.conversation.tier_resolver import Tier
 
 
 def _canned_result() -> EstimationResult:

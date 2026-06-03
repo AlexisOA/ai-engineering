@@ -39,33 +39,59 @@ docker compose up --build
 
 Service listens on `http://localhost:8000`; `/docs` (Swagger) and `/redoc` are enabled. Health probe at `GET /health`. Main API endpoint is `POST /api/v1/estimate`.
 
-## Architecture (post-Session 4)
+## Architecture (layered: foundation / domain / generation / api)
 
-The estimator is a typed estimation service implementing a five-layer pipeline. Free-text in, validated structured JSON out.
+The estimator is organized around the **three AI architectures it stacks** — CAG (caches), RAG
+(retrieval) and Agentic (Actor-Critic-Boss) — which **compose only through a single conductor**.
+Full contract in **`estimator/ARCHITECTURE.md`** — respect it for all new session code.
+
+`app/` layers (each may import only from layers above it):
+
+```
+app/
+├── config.py · dependencies.py · main.py   # composition root, above the layers
+├── foundation/   llm · prompts · guardrails · attachments · persistence  (no AI-arch opinion)
+├── domain/       schemas/ (the contract) + estimation_service.py (the conductor)
+├── generation/   cag/ · rag/ · agentic/ · conversation/   (the 3 architectures + substrate)
+├── ingestion/    offline batch pipeline that feeds RAG
+└── api/          thin routers (transport)
+```
+
+Five-layer request pipeline. Free-text in, validated structured JSON out:
 
 ```
 POST /api/v1/estimate
-  └→ app/routers/estimations.py    (thin HTTP layer, error mapping)
-       └→ app/services/estimation.py::EstimationService.estimate()
-            1. app/guardrails/input.py::check_input()         (moderation + injection + PII)
-            2. app/services/cache.py::EstimationCache.get()   (exact-match SHA-256)
-            3. app/cache/semantic.py::EstimationSemanticCache.lookup()
+  └→ app/api/estimations.py    (thin HTTP layer, error mapping)
+       └→ app/domain/estimation_service.py::EstimationService.estimate()
+            1. app/foundation/guardrails/input.py::check_input()      (moderation + injection + PII)
+            2. app/generation/cag/exact.py::EstimationCache.get()     (exact-match SHA-256)
+            3. app/generation/cag/semantic.py::EstimationSemanticCache.lookup()
                                                                 (redisvl vector similarity)
-            4. app/prompts/loader.py::render_estimation_prompt()  (Jinja2 versioned templates)
-            5. app/services/llm_wrapper.py::complete_structured()
+            4. app/foundation/prompts/loader.py::render_estimation_prompt()  (Jinja2 versioned)
+            5. app/foundation/llm/wrapper.py::complete_structured()
                                                                 (Instructor + Pydantic validators
                                                                  with automatic re-prompt)
-            6. app/guardrails/output.py::enforce_scope_response() (filter policy)
+            6. app/foundation/guardrails/output.py::enforce_scope_response() (filter policy)
             7. cache.set() + semantic_cache.store()
             8. return EstimationResponse(result, prompt_version, cached)
 ```
 
+**Layering rules** (see `estimator/ARCHITECTURE.md` for the full table):
+- `foundation/` imports only `config`. `domain/schemas` imports `foundation`. `generation/<x>`
+  imports `foundation` + `domain/schemas` but **never another `generation` sibling** (the one
+  exception: `agentic` may import `conversation`).
+- The `generation` siblings (cag/rag/agentic) meet **only** inside the conductor
+  (`domain/estimation_service.py`). New cross-layer composition goes there, never in a router
+  and never via a sibling import.
+- `api/` is transport only (error mapping); `dependencies.py` is the composition root that wires
+  every singleton and is allowed to import anything.
+
 Key design points future changes should respect:
 
 - **The router has no business logic.** It only catches three exceptions and turns them into HTTP statuses: `InputGuardrailViolation` → 400, anything else from the pipeline (including `instructor.exceptions.InstructorRetryException`) → 502, plus Pydantic 422 from `EstimationRequest` validation. Add new policies inside `EstimationService.estimate()`, not in the router.
-- **Schema is the contract.** `EstimationResult` (in `app/schemas/estimation.py`) is what Instructor enforces against the LLM. The two `model_validator`s (`phases_sum_matches_total`, `low_confidence_requires_out_of_scope_prefix`) are the business rules — when they raise, Instructor re-prompts the LLM up to `max_retries=6` times.
+- **Schema is the contract.** `EstimationResult` (in `app/domain/schemas/estimation.py`) is what Instructor enforces against the LLM. The two `model_validator`s (`phases_sum_matches_total`, `low_confidence_requires_out_of_scope_prefix`) are the business rules — when they raise, Instructor re-prompts the LLM up to `max_retries=6` times.
 - **Field order matters with Instructor.** `phases` is declared BEFORE `total_cost_eur` / `total_duration_weeks` on purpose: the LLM emits phases first (autoregressive) and then only needs to sum, instead of picking a round total and back-fitting phases. With smaller models like `gpt-4o-mini` this is the difference between consistent success and arithmetic failures.
-- **Two caches in series.** Exact-match cache (`app/services/cache.py`) keys on SHA-256 of the typed request + prompt_version + model. The semantic cache (`app/cache/semantic.py`) layers on top: same bucket (`prompt_version:project_type:detail_level:output_format`) + cosine similarity ≥ `SEMANTIC_CACHE_THRESHOLD` (default 0.85). The semantic cache requires Redis Stack (`redis/redis-stack:7.4.0-v0`), not vanilla Redis — RediSearch is mandatory for vector queries.
+- **Two caches in series.** Both live in the CAG layer (`app/generation/cag/`). The exact-match cache (`app/generation/cag/exact.py`) keys on SHA-256 of the typed request + prompt_version + model. The semantic cache (`app/generation/cag/semantic.py`) layers on top: same bucket (`prompt_version:project_type:detail_level:output_format`) + cosine similarity ≥ `SEMANTIC_CACHE_THRESHOLD` (default 0.85). The semantic cache requires Redis Stack (`redis/redis-stack:7.4.0-v0`), not vanilla Redis — RediSearch is mandatory for vector queries.
 - **Guardrails are policies, not features.** `check_input` uses `exception` policy (raise on violation). `enforce_scope_response` uses `filter` (rewrite the summary). The schema validators use `re-prompt` (Instructor handles it). The split is documented in the live-session guide.
 - **Settings are a cached singleton** via `app/config.py::get_settings` (`@lru_cache`). Any change to `.env` requires recreating the container (`docker compose up -d --force-recreate`); a `--reload` is not enough.
 - **Logging** is `structlog`. JSON in `production`, console in dev. Use `structlog.get_logger()` rather than stdlib `logging`.

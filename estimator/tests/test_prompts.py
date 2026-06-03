@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from jinja2 import Environment, StrictUndefined, UndefinedError
 
-from app.prompts.loader import render_estimation_prompt
-from app.schemas.estimation import (
+from app.foundation.prompts.loader import render_estimation_prompt
+from app.domain.schemas.estimation import (
     DetailLevel,
     EstimationRequest,
     OutputFormat,

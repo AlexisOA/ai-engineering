@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.schemas.estimation import EstimationResult
+from app.domain.schemas.estimation import EstimationResult
 from evals.dataset import GoldenCase
 from evals.metrics import (
     ContentRecallMetric,
