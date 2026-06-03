@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-from app.schemas.estimation import EstimationResult
-from app.sessions.metadata_extractor import update_metadata
-from app.sessions.models import ProjectMetadata
+from app.domain.schemas.estimation import EstimationResult
+from app.generation.conversation.metadata_extractor import update_metadata
+from app.generation.conversation.models import ProjectMetadata
 
 
 def _canned_result() -> EstimationResult:

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from app.sessions.compression.anchors import AnchorDetector
-from app.sessions.compression.policy import CompressionPolicy, apply_compression
-from app.sessions.compression.summarizer import CumulativeSummarizer, _SummaryEnvelope
-from app.sessions.models import ConversationHistory
+from app.generation.conversation.compression.anchors import AnchorDetector
+from app.generation.conversation.compression.policy import CompressionPolicy, apply_compression
+from app.generation.conversation.compression.summarizer import CumulativeSummarizer, _SummaryEnvelope
+from app.generation.conversation.models import ConversationHistory
 
 
 def _make_wrapper_returning(summary_text: str = "Running summary text."):

@@ -10,10 +10,10 @@ from app.dependencies import (
     get_session_store,
 )
 from app.main import app
-from app.schemas.estimation import EstimationResult
-from app.services.estimation import EstimationService
-from app.sessions.models import ProjectMetadata
-from app.sessions.store import SessionStore
+from app.domain.schemas.estimation import EstimationResult
+from app.domain.estimation_service import EstimationService
+from app.generation.conversation.models import ProjectMetadata
+from app.generation.conversation.store import SessionStore
 
 
 @pytest.fixture
@@ -87,8 +87,8 @@ class FakeLLMWrapper:
         """Best-effort canned instance when no factory is registered."""
         # Local imports keep this lazy — the optional schemas are only present
         # once their modules ship.
-        from app.sessions.compression.summarizer import _SummaryEnvelope
-        from app.sessions.compression.anchors import _AnchorClassification
+        from app.generation.conversation.compression.summarizer import _SummaryEnvelope
+        from app.generation.conversation.compression.anchors import _AnchorClassification
 
         if schema is _SummaryEnvelope:
             return _SummaryEnvelope(summary="(canned summary for tests)")

@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
+from app.domain.schemas.estimation import DetailLevel, OutputFormat, ProjectType
 from evals.stress.metrics import FactField
 
 

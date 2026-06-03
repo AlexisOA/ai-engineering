@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from app.schemas.estimation import TurnObservation
+from app.domain.schemas.estimation import TurnObservation
 from evals.metrics import MetricResult
 
 

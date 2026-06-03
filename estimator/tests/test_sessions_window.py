@@ -12,8 +12,8 @@ from app.dependencies import (
     get_session_store,
 )
 from app.main import app
-from app.services.estimation import EstimationService
-from app.sessions.store import SessionStore
+from app.domain.estimation_service import EstimationService
+from app.generation.conversation.store import SessionStore
 from tests.conftest import FakeLLMWrapper
 
 

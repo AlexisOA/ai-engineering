@@ -2,7 +2,7 @@
 
 The DB URL is read from ``app.config.Settings`` (not from alembic.ini) so the
 container, the dev host and CI all use the same source of truth. Migrations are
-discovered by importing ``app.persistence.models``: every SQLAlchemy model in
+discovered by importing ``app.foundation.persistence.models``: every SQLAlchemy model in
 that module is registered against ``Base.metadata`` and becomes visible to
 Alembic's autogenerate.
 """
@@ -14,7 +14,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.config import get_settings
-from app.persistence.models import Base  # noqa: F401 — ensure models are imported
+from app.foundation.persistence.models import Base  # noqa: F401 — ensure models are imported
 
 config = context.config
 

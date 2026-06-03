@@ -15,7 +15,7 @@ import httpx
 import streamlit as st
 from dotenv import load_dotenv
 
-from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
+from app.domain.schemas.estimation import DetailLevel, OutputFormat, ProjectType
 
 load_dotenv()
 

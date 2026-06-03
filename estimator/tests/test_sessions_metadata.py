@@ -17,10 +17,10 @@ from app.dependencies import (
     get_session_store,
 )
 from app.main import app
-from app.schemas.estimation import EstimationResult
-from app.services.estimation import EstimationService
-from app.sessions.models import ProjectMetadata
-from app.sessions.store import SessionStore
+from app.domain.schemas.estimation import EstimationResult
+from app.domain.estimation_service import EstimationService
+from app.generation.conversation.models import ProjectMetadata
+from app.generation.conversation.store import SessionStore
 
 
 def _canned_result() -> EstimationResult:

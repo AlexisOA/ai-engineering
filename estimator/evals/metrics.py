@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.schemas.estimation import EstimationResult, OUT_OF_SCOPE_PREFIX
+from app.domain.schemas.estimation import EstimationResult, OUT_OF_SCOPE_PREFIX
 from evals.dataset import GoldenCase
 
 

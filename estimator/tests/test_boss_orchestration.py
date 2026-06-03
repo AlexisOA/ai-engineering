@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from app.schemas.critic import CriticFeedback, CriticIssue
-from app.schemas.estimation import EstimationResult
-from app.services.boss import Boss
+from app.domain.schemas.critic import CriticFeedback, CriticIssue
+from app.domain.schemas.estimation import EstimationResult
+from app.generation.agentic.boss import Boss
 
 
 def _result(total: int = 25_000, summary: str = "Mid-size build description.") -> EstimationResult:

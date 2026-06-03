@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.schemas.estimation import TurnObservation
+from app.domain.schemas.estimation import TurnObservation
 from evals.stress.metrics import (
     CostBudgetMetric,
     LatencyBudgetMetric,

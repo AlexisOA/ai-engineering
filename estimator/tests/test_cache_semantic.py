@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.schemas.estimation import EstimationRequest, EstimationResult
+from app.domain.schemas.estimation import EstimationRequest, EstimationResult
 
 
 def _valid_request() -> EstimationRequest:
@@ -46,8 +46,8 @@ def _build_cache(*, threshold: float = 0.92, log_only: bool = False, hits=None):
     fake_index.load.return_value = None
     fake_vectorizer = SimpleNamespace(embed=lambda text: [0.1] * 1536)
 
-    with patch("app.cache.semantic.SearchIndex") if False else _NoopPatcher():
-        from app.cache.semantic import EstimationSemanticCache
+    with patch("app.generation.cag.semantic.SearchIndex") if False else _NoopPatcher():
+        from app.generation.cag.semantic import EstimationSemanticCache
 
     # Re-import to ensure the module is loaded, then build the cache and
     # replace the internals with our fakes.
@@ -73,7 +73,7 @@ class _NoopPatcher:
 
 
 def test_bucket_includes_all_form_options() -> None:
-    from app.cache.semantic import EstimationSemanticCache
+    from app.generation.cag.semantic import EstimationSemanticCache
 
     request = _valid_request()
     bucket = EstimationSemanticCache.bucket_for(request, prompt_version="v1")
@@ -81,7 +81,7 @@ def test_bucket_includes_all_form_options() -> None:
 
 
 def test_bucket_changes_when_any_option_changes() -> None:
-    from app.cache.semantic import EstimationSemanticCache
+    from app.generation.cag.semantic import EstimationSemanticCache
 
     base = _valid_request()
     other = EstimationRequest.model_validate(
@@ -93,7 +93,7 @@ def test_bucket_changes_when_any_option_changes() -> None:
 
 
 def test_bucket_changes_when_prompt_version_changes() -> None:
-    from app.cache.semantic import EstimationSemanticCache
+    from app.generation.cag.semantic import EstimationSemanticCache
 
     request = _valid_request()
     assert EstimationSemanticCache.bucket_for(

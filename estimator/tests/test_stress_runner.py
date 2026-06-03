@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
+from app.domain.schemas.estimation import DetailLevel, OutputFormat, ProjectType
 from evals.stress.metrics import CostBudgetMetric, LatencyBudgetMetric
 from evals.stress.run import _CSV_COLUMNS, _run_one_session
 from evals.stress.scenarios import Scenario, ScenarioTurn

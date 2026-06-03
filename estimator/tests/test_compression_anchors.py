@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.sessions.compression.anchors import AnchorDetector
-from app.sessions.models import Message
+from app.generation.conversation.compression.anchors import AnchorDetector
+from app.generation.conversation.models import Message
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_llm_mode_falls_back_to_heuristic_when_wrapper_missing() -> None:
 
 def test_llm_mode_calls_wrapper_when_provided() -> None:
     from unittest.mock import MagicMock
-    from app.sessions.compression.anchors import _AnchorClassification
+    from app.generation.conversation.compression.anchors import _AnchorClassification
 
     wrapper = MagicMock()
     wrapper.complete_structured_chat.return_value = (

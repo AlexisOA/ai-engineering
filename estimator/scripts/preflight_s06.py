@@ -148,7 +148,7 @@ def check_postgres() -> str:
     """Connect to Postgres and confirm the migration has been applied."""
     from sqlalchemy import inspect
 
-    from app.persistence.database import create_engine_from_settings
+    from app.foundation.persistence.database import create_engine_from_settings
 
     engine = create_engine_from_settings()
     insp = inspect(engine)

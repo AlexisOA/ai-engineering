@@ -73,7 +73,7 @@ def _build_pdf(target_kb: int, output_path: Path) -> tuple[int, int]:
 def _verify_extracted(path: Path) -> int:
     """Read the PDF back through pypdf and return the extracted-text length.
 
-    The runner uses pypdf via ``app.attachments.extractor``; we want to make
+    The runner uses pypdf via ``app.foundation.attachments.extractor``; we want to make
     sure what we generated is what the pipeline will see.
     """
     reader = PdfReader(str(path))

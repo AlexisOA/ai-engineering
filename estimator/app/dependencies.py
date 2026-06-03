@@ -9,12 +9,12 @@ import redis
 import structlog
 from openai import OpenAI
 
-from app.cache.semantic import EstimationSemanticCache
+from app.generation.cag.semantic import EstimationSemanticCache
 from app.config import get_settings
-from app.embedding_pipeline.base import Chunker
-from app.embedding_pipeline.chunker import JSONStructuralChunker
-from app.embedding_pipeline.embedder import OpenAIEmbedder
-from app.embedding_pipeline.strategies import (
+from app.generation.rag.chunking.base import Chunker
+from app.generation.rag.chunking.structural import JSONStructuralChunker
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.generation.rag.chunking.strategies import (
     ContextualRetrievalChunker,
     FixedSizeChunker,
     HierarchicalChunker,
@@ -26,10 +26,10 @@ from app.embedding_pipeline.strategies import (
 from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import ParserRegistry, default_registry
-from app.services.cache import EstimationCache
-from app.services.estimation import EstimationService
-from app.services.llm_wrapper import LLMWrapper
-from app.sessions.store import SessionStore
+from app.generation.cag.exact import EstimationCache
+from app.domain.estimation_service import EstimationService
+from app.foundation.llm.wrapper import LLMWrapper
+from app.generation.conversation.store import SessionStore
 
 log = structlog.get_logger()
 

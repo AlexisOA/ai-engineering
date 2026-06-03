@@ -5,7 +5,7 @@ Servicio IA en FastAPI que estima proyectos de software a partir de un formulari
 A partir de la **Sesión 04** el contrato es deliberadamente estrecho:
 - entrada tipada (`description` + tres enums),
 - salida en texto libre,
-- prompt fuera del código en templates Jinja2 versionados (`app/prompts/<use_case>/<version>/`).
+- prompt fuera del código en templates Jinja2 versionados (`app/foundation/prompts/<use_case>/<version>/`).
 
 La inteligencia adicional (output estructurado, guardrails, cache semántico) se construye encima de esta base en directo.
 
@@ -113,7 +113,7 @@ estimator/
 
 ### Versionado de prompts
 
-La estructura `app/prompts/<use_case>/<version>/` no es opcional: `v1/` ya existe desde el primer día porque versionar un prompt es la forma más barata de habilitar A/B testing y rollback en producción. Cuando una iteración del prompt se cocina, se crea `v2/` al lado y `render_estimation_prompt(request, version="v2")` lo recoge sin tocar router ni schemas.
+La estructura `app/foundation/prompts/<use_case>/<version>/` no es opcional: `v1/` ya existe desde el primer día porque versionar un prompt es la forma más barata de habilitar A/B testing y rollback en producción. Cuando una iteración del prompt se cocina, se crea `v2/` al lado y `render_estimation_prompt(request, version="v2")` lo recoge sin tocar router ni schemas.
 
 Lo que vive **fuera** del template (en código): el contrato (`EstimationRequest`), el switch de versión y el wrapper. Todo lo demás (rol del modelo, reglas, ejemplos, formatos de salida, niveles de detalle) vive dentro del `.j2`. Si para cambiar el comportamiento del modelo hay que tocar Python, la separación está rota.
 
@@ -206,7 +206,7 @@ El cliente Rails (`estimator-web/`) se adaptó al flujo conversacional con un nu
 
 ## Sesión 7 — Pipeline de embeddings
 
-Primer paso hacia la búsqueda semántica: convertir presupuestos históricos (JSON) en vectores. El módulo nuevo vive en `app/embedding_pipeline/` y expone un único endpoint. **No se persiste nada todavía** — los vectores se generan en memoria y se devuelven por HTTP; la persistencia en pgvector entra en la Sesión 08.
+Primer paso hacia la búsqueda semántica: convertir presupuestos históricos (JSON) en vectores. El módulo nuevo vive en `app/generation/rag/` y expone un único endpoint. **No se persiste nada todavía** — los vectores se generan en memoria y se devuelven por HTTP; la persistencia en pgvector entra en la Sesión 08.
 
 Piezas:
 
@@ -254,11 +254,11 @@ docker compose exec estimator python scripts/compare.py \
   --text-a "..." --text-b "..."
 ```
 
-Los resultados de las tres parejas de validación del enunciado están en [`app/embedding_pipeline/SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
+Los resultados de las tres parejas de validación del enunciado están en [`app/generation/rag/SANITY_CHECK.md`](app/generation/rag/SANITY_CHECK.md).
 
 ### Comparativa de estrategias de chunking (sesión en vivo)
 
-Ocho estrategias de chunking tras una interfaz común (`app/embedding_pipeline/base.py::Chunker`): `structural`, `fixed_size`, `recursive`, `sentence_window`, `semantic`, `propositional`, `contextual_retrieval`, `hierarchical`. Viven en `app/embedding_pipeline/strategies/` (el estructural en `chunker.py`).
+Ocho estrategias de chunking tras una interfaz común (`app/generation/rag/chunking/base.py::Chunker`): `structural`, `fixed_size`, `recursive`, `sentence_window`, `semantic`, `propositional`, `contextual_retrieval`, `hierarchical`. Viven en `app/generation/rag/chunking/strategies/` (el estructural en `structural.py`).
 
 ```
 POST /embeddings/compare
@@ -281,7 +281,7 @@ uv run python scripts/compare_chunkers.py --models small-1536,small-768
 
 # Generar el reporte de respaldo
 uv run python scripts/compare_chunkers.py --strategies all --queries all \
-  --show-stats --show-cost --output app/embedding_pipeline/COMPARISON_REPORT.md
+  --show-stats --show-cost --output app/generation/rag/COMPARISON_REPORT.md
 ```
 
 Las estrategias `semantic`, `propositional` y `contextual_retrieval` llaman a APIs externas durante la ingesta (necesitan `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) y reportan su coste en `chunking_done`. `sentence_window` usa NLTK (`punkt`/`punkt_tab`, descarga perezosa). Nada se persiste todavía — la persistencia vectorial con pgvector entra en la **Sesión 08**.
