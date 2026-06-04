@@ -4,18 +4,18 @@ class EstimationsController < ApplicationController
   end
 
   def new
-    @request = EstimationRequest.new
+    @request = Estimation::Request.new
   end
 
   def create
-    @request = EstimationRequest.new(estimation_request_params)
+    @request = Estimation::Request.new(estimation_request_params)
 
     unless @request.valid?
       render :new, status: :unprocessable_entity
       return
     end
 
-    payload = EstimatorAi::Client.new.estimate(@request)
+    payload = EstimatorAi::EstimationsClient.new.estimate(@request)
 
     @estimation = Estimation.create!(
       description:      @request.description,
@@ -28,13 +28,13 @@ class EstimationsController < ApplicationController
     )
 
     redirect_to estimation_path(@estimation)
-  rescue EstimatorAi::Client::GuardrailViolation => e
+  rescue EstimatorAi::GuardrailViolation => e
     flash.now[:alert] = e.message
     render :new, status: :unprocessable_entity
-  rescue EstimatorAi::Client::InvalidRequest => e
+  rescue EstimatorAi::InvalidRequest => e
     flash.now[:alert] = e.message
     render :new, status: :unprocessable_entity
-  rescue EstimatorAi::Client::ServerError, Faraday::ConnectionFailed, Faraday::TimeoutError => e
+  rescue EstimatorAi::ServerError, Faraday::ConnectionFailed, Faraday::TimeoutError => e
     flash.now[:alert] = "AI service unavailable: #{e.message}"
     render :new, status: :service_unavailable
   end

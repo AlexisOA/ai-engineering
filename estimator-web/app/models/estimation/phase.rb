@@ -1,4 +1,5 @@
-class Phase
+# Mirror of the FastAPI ``Phase`` Pydantic schema (one line of the estimate).
+class Estimation::Phase
   include ActiveModel::Model
   include ActiveModel::Attributes
 

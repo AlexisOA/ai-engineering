@@ -94,23 +94,29 @@ class EstimationSemanticCache:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def bucket_for(request: EstimationRequest, prompt_version: str) -> str:
+    def bucket_for(request: EstimationRequest, prompt_version: str, model: str) -> str:
+        # The model is part of the bucket (like the exact cache key): a hit
+        # produced by one model must never be served while another is active —
+        # critical now that the primary model can change at runtime.
         return (
             f"{prompt_version}"
             f":{request.project_type.value}"
             f":{request.detail_level.value}"
             f":{request.output_format.value}"
+            f":{model}"
         )
 
     # ------------------------------------------------------------------
     # Lookup / store
     # ------------------------------------------------------------------
 
-    def lookup(self, request: EstimationRequest, prompt_version: str) -> EstimationResult | None:
+    def lookup(
+        self, request: EstimationRequest, prompt_version: str, model: str
+    ) -> EstimationResult | None:
         from redisvl.query import VectorQuery
         from redisvl.query.filter import Tag
 
-        bucket = self.bucket_for(request, prompt_version)
+        bucket = self.bucket_for(request, prompt_version, model)
         embedding = self.vectorizer.embed(request.description)
 
         query = VectorQuery(
@@ -157,8 +163,9 @@ class EstimationSemanticCache:
         request: EstimationRequest,
         result: EstimationResult,
         prompt_version: str,
+        model: str,
     ) -> None:
-        bucket = self.bucket_for(request, prompt_version)
+        bucket = self.bucket_for(request, prompt_version, model)
         embedding = self.vectorizer.embed(request.description)
         payload = [
             {

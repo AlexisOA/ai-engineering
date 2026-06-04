@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_05_18_120000) do
+ActiveRecord::Schema[8.0].define(version: 2026_06_04_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -22,6 +22,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_18_120000) do
     t.datetime "updated_at", null: false
     t.jsonb "runtime_snapshot", default: {}, null: false
     t.index ["remote_session_id"], name: "index_chat_sessions_on_remote_session_id", unique: true
+  end
+
+  create_table "chunking_comparisons", force: :cascade do |t|
+    t.jsonb "strategies", default: [], null: false
+    t.jsonb "queries", default: [], null: false
+    t.integer "top_k", default: 3, null: false
+    t.string "corpus_label", default: "budgets_sample", null: false
+    t.integer "corpus_count", default: 0, null: false
+    t.jsonb "response_payload", default: {}, null: false
+    t.integer "duration_ms"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_chunking_comparisons_on_created_at"
   end
 
   create_table "estimations", force: :cascade do |t|

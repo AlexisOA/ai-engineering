@@ -130,7 +130,35 @@ Lo que vive **fuera** del template (en código): el contrato (`EstimationRequest
 | `APP_ENV` | `development` | Controla el renderer de structlog |
 | `ESTIMATOR_API_BASE_URL` | `http://localhost:8000` | Lo lee el cliente Streamlit |
 
-`get_settings()` es un singleton cacheado con `lru_cache`: cualquier cambio en `.env` requiere reiniciar uvicorn (no basta con `--reload`).
+`get_settings()` es un singleton cacheado con `lru_cache`: cualquier cambio en `.env` requiere reiniciar uvicorn (no basta con `--reload`). **Excepción: los modelos LLM** — ver la sección siguiente.
+
+## Configuración de modelos en runtime
+
+Los knobs de modelo (`PRIMARY_MODEL`, `FALLBACK_MODEL`, `CRITIC_MODEL`, `METADATA_EXTRACTOR_MODEL`, `COMPRESSION_MODEL`, `PROPOSITIONAL_CHUNKER_MODEL`, `CONTEXTUAL_CHUNKER_MODEL`) se pueden **sobreescribir en caliente** sin tocar `.env` ni recrear contenedores — pensado para cambiar de modelo en mitad de un directo (la pestaña *Ajustes* del cliente Rails usa este endpoint).
+
+```
+GET /api/v1/config/models
+  → {"models": {KEY: {"effective", "default", "overridden"}},
+     "available_models": [...], "embedding_model": "..."}
+
+PUT /api/v1/config/models
+  Body: {"models": {"PRIMARY_MODEL": "gpt-4o", "CRITIC_MODEL": null}}   # null = reset
+  → mismo shape que el GET (snapshot fresco)
+  422 key desconocida / modelo fuera de catálogo · 400 modelo sin API key · 503 Redis caído
+```
+
+Cómo funciona (`app/foundation/llm/runtime_config.py`):
+
+- Los overrides viven en un hash de Redis (`estimator:runtime_config`): **sobreviven a `--reload` y reinicios**, y todos los workers los ven al instante. `.env` sigue siendo la capa de defaults.
+- El wrapper y el servicio resuelven el modelo **por llamada** (properties), así que el cambio aplica en la siguiente petición. El catálogo (`AVAILABLE_MODELS`) se filtra por las API keys configuradas.
+- Con un override de primario activo no hay fallback automático de provider (misma semántica que `model_override`: llamada directa, sin Router).
+- Las caches se particionan por modelo (la exacta ya lo hacía; la semántica incluye el modelo en su bucket desde este cambio), así que cambiar de modelo nunca sirve respuestas generadas por otro.
+- `EMBEDDING_MODEL` queda fuera a propósito: cambiarlo invalidaría todos los vectores almacenados.
+
+```bash
+http PUT :8000/api/v1/config/models models:='{"PRIMARY_MODEL": "gpt-4o"}'
+http PUT :8000/api/v1/config/models models:='{"PRIMARY_MODEL": null}'     # volver al .env
+```
 
 ---
 
