@@ -43,7 +43,7 @@
     <div>
       <%= f.label :project_type, class: "block text-sm font-bold mb-1 text-white/90" %>
       <%= f.select :project_type,
-            EstimationRequest::PROJECT_TYPES.map { |v| [ v.humanize, v ] },
+            Estimation::Request::PROJECT_TYPES.map { |v| [ v.humanize, v ] },
             { include_blank: "Select…" },
             class: "w-full border border-white/20 rounded-md p-3 text-white bg-ink/40 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand [&>option]:bg-ink-dark [&>option]:text-white" %>
     </div>
@@ -51,7 +51,7 @@
     <div>
       <%= f.label :detail_level, class: "block text-sm font-bold mb-1 text-white/90" %>
       <%= f.select :detail_level,
-            EstimationRequest::DETAIL_LEVELS.map { |v| [ v.humanize, v ] },
+            Estimation::Request::DETAIL_LEVELS.map { |v| [ v.humanize, v ] },
             {},
             class: "w-full border border-white/20 rounded-md p-3 text-white bg-ink/40 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand [&>option]:bg-ink-dark [&>option]:text-white" %>
     </div>
@@ -60,7 +60,7 @@
   <div>
     <%= f.label :output_format, class: "block text-sm font-bold mb-1 text-white/90" %>
     <%= f.select :output_format,
-          EstimationRequest::OUTPUT_FORMATS.map { |v| [ v.humanize, v ] },
+          Estimation::Request::OUTPUT_FORMATS.map { |v| [ v.humanize, v ] },
           {},
           class: "w-full border border-white/20 rounded-md p-3 text-white bg-ink/40 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand [&>option]:bg-ink-dark [&>option]:text-white" %>
   </div>

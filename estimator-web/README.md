@@ -2,6 +2,15 @@
 
 Rails 8 frontend + business backend for the AI-engineering monorepo. Consumes the FastAPI service in `../estimator/` for LLM estimations.
 
+Organized by **contexts mirroring the Master's modules** — `estimation` (S04, transactional), `conversation` (S05, multi-turn + ACB) and `rag` (S07, Chunking Lab) — over an `EstimatorAi` foundation that is the only layer talking HTTP to the service. Full rules and layer map in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## Secciones de la UI
+
+- **`/`** — home dashboard: un card por contexto del máster.
+- **`/estimations`** — estimación transaccional (S04).
+- **`/chat_sessions`** — conversación multi-turno con adjuntos, tiers y modo Actor-Critic-Boss (S05).
+- **`/rag/chunking_comparisons`** — **Chunking Lab** (S07): comparativa de las 8 estrategias de chunking sobre el corpus de 17 presupuestos (`lib/estimator_ai/data/`), con estadísticas por estrategia (tokens, huérfanos/obesos, coste, segundos), barras de coste y playground de retrieval (top-k por similitud coseno, badges parent/child en `hierarchical`). Cada run se persiste (`chunking_comparisons`, payload JSONB) para revisitar resultados caros (contextual_retrieval ≈ $0.14 / 3 min) sin re-pagar. Las estrategias de pago son opt-in y van avisadas en el formulario; la llamada usa un timeout propio de 600 s.
+
 ## Stack
 
 - Ruby 3.4.4 / Rails 8.0.5

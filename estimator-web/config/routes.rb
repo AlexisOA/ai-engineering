@@ -20,5 +20,11 @@ Rails.application.routes.draw do
     end
   end
 
-  root "chat_sessions#new"
+  # Session 7 RAG context: chunking strategy comparison lab.
+  namespace :rag do
+    resources :chunking_comparisons, only: [ :index, :new, :create, :show ]
+  end
+
+  # Landing dashboard: one card per context of the Master's journey.
+  root "home#index"
 end

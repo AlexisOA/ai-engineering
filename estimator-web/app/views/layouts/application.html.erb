@@ -28,10 +28,13 @@
         <% end %>
         <span class="text-white font-bold tracking-tight text-lg">Estimator</span>
         <nav class="ml-auto flex items-center gap-4 text-sm">
-          <%= link_to "Nueva estimación", new_estimation_path,
-                class: "font-bold tracking-tight text-white/80 hover:text-white" %>
-          <%= link_to "Estimaciones", estimations_path,
-                class: "font-bold tracking-tight text-white/80 hover:text-white" %>
+          <%# One link per context of the Master's journey; active section in brand. %>
+          <%= link_to "Estimación", new_estimation_path,
+                class: "font-bold tracking-tight hover:text-white #{controller_name == 'estimations' ? 'text-brand' : 'text-white/80'}" %>
+          <%= link_to "Conversación", new_chat_session_path,
+                class: "font-bold tracking-tight hover:text-white #{controller_name == 'chat_sessions' ? 'text-brand' : 'text-white/80'}" %>
+          <%= link_to "RAG Lab", new_rag_chunking_comparison_path,
+                class: "font-bold tracking-tight hover:text-white #{controller_path.start_with?('rag/') ? 'text-brand' : 'text-white/80'}" %>
         </nav>
       </div>
     </header>

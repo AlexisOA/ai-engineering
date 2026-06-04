@@ -151,11 +151,13 @@ docker compose exec estimator-web bin/rails test
 docker compose exec postgres psql -U postgres estimator_web_development
 ```
 
-Design points to respect when editing:
+Design points to respect when editing (full layer map and rules in `estimator-web/ARCHITECTURE.md`):
 
-- **`EstimationResponse.from_hash` builds nested `EstimationResult` + `Phase` POROs** from the FastAPI JSON. The view (`show.html.erb`) renders the typed object, not raw text.
+- **The app is organized by contexts mirroring the Master's modules** — `estimation` (S04), `conversation` (S05), `rag` (S07) — over an `EstimatorAi` foundation (`app/services/estimator_ai/`: `BaseClient` + one client per context) that is the only layer talking HTTP to FastAPI. Contexts never import each other.
+- **Contract POROs mirror the Pydantic schemas 1:1** (`from_hash` ↔ `model_validate`): `Estimation::Response.from_hash` builds nested `Estimation::Result` + `Estimation::Phase`; `Rag::ComparisonResponse.from_hash` builds the chunking-comparison tree. Views render the typed objects, not raw JSON; AR roots persist the full payload as JSONB.
 - **The `Stimulus form_loading_controller`** is intentionally simple: it just disables the submit button and shows rolling phase messages while Rails waits for FastAPI. No SSE / no streaming — those were removed when the response became a single JSON object.
 - **The cliente never talks to OpenAI / Anthropic directly.** It only POSTs to FastAPI, and the FastAPI handles guardrails, LLM calls and caches. That boundary is deliberate and documented in the session guide.
-- **GuardrailViolation is a first-class error** in the cliente (`app/services/estimator_ai/client.rb`). The FastAPI returns 400 with `{detail: {reason, message}}` when input is rejected (moderation/prompt_injection/pii); the cliente surfaces this in `flash`.
+- **GuardrailViolation is a first-class error** in the cliente (`EstimatorAi::GuardrailViolation`, raised by `app/services/estimator_ai/base_client.rb`). The FastAPI returns 400 with `{detail: {reason, message}}` when input is rejected (moderation/prompt_injection/pii); the cliente surfaces this in `flash`.
+- **The Chunking Lab** (`/rag/chunking_comparisons`, S07) compares chunking strategies via `POST /embeddings/compare` over the bundled corpus (`lib/estimator_ai/data/`); each run is persisted (`chunking_comparisons`) so paid strategies are never re-paid. Long calls pass a per-instance timeout (`EmbeddingsClient.new(timeout: 600)`) — the global 180s default stays.
 - **`config/database.yml` reads `DATABASE_HOST` / `DATABASE_PORT` / `DATABASE_USER` / `DATABASE_PASSWORD` from ENV** with `nil` fallbacks (Unix socket when not in docker).
 - **Kamal and Thruster** (`.kamal/`, `config/deploy.yml`, `bin/kamal`, `bin/thrust`, gems with `require: false`) are leftovers from `rails new`. Production is out of scope.
