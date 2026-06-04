@@ -1,20 +1,22 @@
-"""Alembic migration environment for the Session 6 persistence layer.
+"""Alembic migration environment for the persistence layer (Sessions 6 + 8).
 
 The DB URL is read from ``app.config.Settings`` (not from alembic.ini) so the
 container, the dev host and CI all use the same source of truth. Migrations are
-discovered by importing ``app.foundation.persistence.models``: every SQLAlchemy model in
-that module is registered against ``Base.metadata`` and becomes visible to
-Alembic's autogenerate.
+discovered by importing the model modules: every SQLAlchemy model registered
+against ``Base.metadata`` becomes visible to Alembic's autogenerate.
 """
 from __future__ import annotations
 
 from logging.config import fileConfig
 
 from alembic import context
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.dialects.postgresql.base import ischema_names
 
 from app.config import get_settings
 from app.foundation.persistence.models import Base  # noqa: F401 — ensure models are imported
+import app.generation.rag.store.models  # noqa: F401 — register S8 tables on Base.metadata
 
 config = context.config
 
@@ -22,6 +24,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 config.set_main_option("sqlalchemy.url", get_settings().DATABASE_URL)
+
+# Teach reflection about the ``vector`` column type. Without this,
+# ``alembic check`` / autogenerate against a DB that already has vector
+# columns cannot map them back and produces inconsistent diffs.
+ischema_names["vector"] = Vector
 
 target_metadata = Base.metadata
 

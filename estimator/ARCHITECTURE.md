@@ -44,7 +44,7 @@ app/
 │
 ├── generation/             # las 3 arquitecturas que componen + substrato conversacional
 │   ├── cag/                #   exact.py + semantic.py
-│   ├── rag/                #   chunking/ + embedding/ + analysis/ + store/(S8) + retriever.py(S8)
+│   ├── rag/                #   chunking/ + embedding/ + analysis/ + store/ + ingest_service.py + retriever.py
 │   ├── agentic/            #   boss.py + critic.py
 │   └── conversation/       #   models, store, metadata_extractor, tier_resolver, compression/
 │
@@ -55,7 +55,8 @@ app/
     ├── estimations.py      #   POST /api/v1/estimate
     ├── sessions.py         #   /sessions/*
     ├── ingestion.py        #   /api/v1/ingestion/*
-    └── embeddings.py       #   POST /embeddings/ingest
+    ├── embeddings.py       #   POST /embeddings/ingest (persiste desde S8) + /embeddings/compare
+    └── search.py           #   POST /search (búsqueda semántica, S8)
 ```
 
 ## 3. Reglas de dependencias (MUST / MUST NOT)
@@ -130,7 +131,8 @@ POST /api/v1/estimate
 
 ## 8. Contratos públicos que NO se rompen
 
-- **Rutas HTTP**: `/api/v1/estimate`, `/sessions/*`, `/api/v1/ingestion/*`, `/embeddings/ingest`.
+- **Rutas HTTP**: `/api/v1/estimate`, `/sessions/*`, `/api/v1/ingestion/*`, `/embeddings/ingest`,
+  `/search`.
   El cliente Rails (`estimator-web`) depende de ellas y de la forma JSON de
   `EstimationResponse` / `ACBResponse`.
 - **`EstimationResult`** (`domain/schemas/estimation.py`): el orden de campos importa para
@@ -140,8 +142,14 @@ POST /api/v1/estimate
 
 ## 9. Roadmap (slots reservados)
 
-- `generation/rag/store/` — persistencia pgvector (HNSW). **Sesión 8.**
-- `generation/rag/retriever.py` — recuperación semántica con filtrado por metadatos/acceso. **Sesión 8.**
+- `generation/rag/store/` — persistencia pgvector. **Implementado en el previo de la Sesión 8**
+  (modelos `documents`/`chunks` + repositorio async). El índice HNSW se añade en el directo.
+- `generation/rag/retriever.py` — recuperación semántica. **Implementado en el previo de la
+  Sesión 8** (k-NN por distancia coseno). El filtrado por metadatos/acceso se añade en el directo.
+- `generation/rag/ingest_service.py` — orquestación chunk → embed → persist en una transacción
+  (composición intra-RAG: chunker + embedder + store, permitida dentro del sibling).
+- Integración del retriever en `EstimationService.estimate()` (RAG en el pipeline de
+  estimación) — sesiones posteriores; la composición irá en el conductor, como manda la §7.
 
 ## Apéndice — Mapa de migración de rutas (vieja → nueva)
 

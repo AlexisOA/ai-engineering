@@ -1,68 +1,81 @@
 """HTTP layer for the embedding pipeline.
 
-Thin router: it orchestrates chunker -> embedder -> response assembly and maps
-failures to status codes. No business logic lives here.
+Thin router: it maps service exceptions to status codes. The chunk → embed →
+persist orchestration lives in ``RagIngestService``; no business logic here.
 """
 
 from __future__ import annotations
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
-from app.dependencies import ALL_STRATEGIES, build_chunkers, get_chunker, get_embedder
-from app.generation.rag.chunking.structural import JSONStructuralChunker
+from app.dependencies import (
+    ALL_STRATEGIES,
+    build_chunkers,
+    get_embedder,
+    get_rag_ingest_service,
+)
 from app.generation.rag.analysis.comparison import (
     ChunkingComparator,
     CompareRequest,
     CompareResponse,
 )
-from app.generation.rag.embedding.embedder import OpenAIEmbedder, estimated_cost_usd
-from app.generation.rag.schemas import IngestRequest, IngestResponse, IngestStats
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.generation.rag.ingest_service import DuplicateDocumentError, RagIngestService
+from app.generation.rag.schemas import IngestRequest, IngestResponse
 
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/embeddings", tags=["embeddings"])
 
 
-@router.post("/ingest", response_model=IngestResponse)
-def ingest(
+@router.post(
+    "/ingest",
+    response_model=IngestResponse,
+    responses={409: {"description": "Document already ingested"}},
+)
+async def ingest(
     request: IngestRequest,
-    chunker: JSONStructuralChunker = Depends(get_chunker),
-    embedder: OpenAIEmbedder | None = Depends(get_embedder),
-) -> IngestResponse:
-    """Chunk the budgets, embed every chunk, and return vectors + stats."""
-    if embedder is None:
+    service: RagIngestService | None = Depends(get_rag_ingest_service),
+) -> IngestResponse | JSONResponse:
+    """Persist one budget as a document + embedded chunks (one transaction)."""
+    if service is None:
         # No OPENAI_API_KEY configured. Generic message to the client, detail logged.
         log.error("embeddings_ingest_failed", reason="embedder_unavailable")
         raise HTTPException(status_code=500, detail="Embedding service is not available.")
 
-    chunks = chunker.chunk(request.budgets)
     log.info(
         "embeddings_ingest_received",
-        total_budgets=len(request.budgets),
-        total_chunks=len(chunks),
+        source_path=request.source_path,
+        document_type=request.document_type,
     )
-
     try:
-        embedded = embedder.embed_many(chunks)
-    except Exception as exc:  # noqa: BLE001 — any embedding-API failure becomes a 500.
+        return await service.ingest(
+            source_path=request.source_path,
+            document_type=request.document_type,
+            budget=request.content,
+        )
+    except DuplicateDocumentError as exc:
+        # JSONResponse (not HTTPException) to keep the exercise's literal
+        # top-level shape: {"detail": ..., "document_id": ...}.
+        log.info(
+            "embeddings_ingest_duplicate",
+            source_path=request.source_path,
+            document_id=exc.document_id,
+        )
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Document already ingested", "document_id": exc.document_id},
+        )
+    except Exception as exc:  # noqa: BLE001 — embedding/DB failures become a 500.
         log.error(
             "embeddings_ingest_failed",
-            reason="embedding_api_error",
+            reason="ingest_error",
             error_type=type(exc).__name__,
             error=str(exc)[:300],
         )
         raise HTTPException(status_code=500, detail="Failed to generate embeddings.") from exc
-
-    total_tokens = sum(chunk.token_count for chunk in embedded)
-    stats = IngestStats(
-        total_budgets=len(request.budgets),
-        total_chunks=len(embedded),
-        total_tokens=total_tokens,
-        estimated_cost_usd=estimated_cost_usd(total_tokens),
-    )
-    log.info("embeddings_ingest_done", **stats.model_dump())
-    return IngestResponse(chunks=embedded, stats=stats)
 
 
 @router.post("/compare", response_model=CompareResponse)

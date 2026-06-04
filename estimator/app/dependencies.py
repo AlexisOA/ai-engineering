@@ -29,6 +29,10 @@ from app.ingestion.parsers.registry import ParserRegistry, default_registry
 from app.generation.cag.exact import EstimationCache
 from app.domain.estimation_service import EstimationService
 from app.foundation.llm.wrapper import LLMWrapper
+from app.foundation.persistence.database import get_async_session_factory
+from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.retriever import SemanticRetriever
+from app.generation.rag.store.repository import ChunkStore
 from app.generation.conversation.store import SessionStore
 
 log = structlog.get_logger()
@@ -80,6 +84,43 @@ def get_embedder() -> OpenAIEmbedder | None:
         log.warning("embedder_disabled", reason="no_openai_key")
         return None
     return OpenAIEmbedder(client=client, model=settings.EMBEDDING_MODEL)
+
+
+# --- Session 8: pgvector persistence + semantic search ---------------------
+
+
+@lru_cache
+def get_chunk_store() -> ChunkStore:
+    """Stateless async data-access layer over documents/chunks."""
+    return ChunkStore()
+
+
+@lru_cache
+def get_rag_ingest_service() -> RagIngestService | None:
+    """Chunk → embed → persist orchestration. ``None`` without an OpenAI key
+    (mirrors ``get_embedder``); the router maps that to a 500."""
+    embedder = get_embedder()
+    if embedder is None:
+        return None
+    return RagIngestService(
+        chunker=get_chunker(),
+        embedder=embedder,
+        session_factory=get_async_session_factory(),
+        store=get_chunk_store(),
+    )
+
+
+@lru_cache
+def get_semantic_retriever() -> SemanticRetriever | None:
+    """Query-side counterpart of the ingest service. Same ``None`` contract."""
+    embedder = get_embedder()
+    if embedder is None:
+        return None
+    return SemanticRetriever(
+        embedder=embedder,
+        session_factory=get_async_session_factory(),
+        store=get_chunk_store(),
+    )
 
 
 @lru_cache

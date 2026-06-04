@@ -4,7 +4,6 @@ from __future__ import annotations
 import textwrap
 
 import pytest
-import yaml
 
 from app.ingestion.catalog import CatalogDecision, load_catalog
 from app.ingestion.catalog.models import (

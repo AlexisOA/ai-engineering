@@ -31,6 +31,9 @@ dependencies = [
     "langchain-experimental>=0.3.0",
     "langchain-openai>=0.2.0",
     "nltk>=3.9",
+    # Session 8 — pgvector persistence (async driver + vector type for SQLAlchemy)
+    "asyncpg>=0.29",
+    "pgvector>=0.3",
     # Session 6 — data-driven AI
     "pandas>=2.2",
     "pandera>=0.20",
