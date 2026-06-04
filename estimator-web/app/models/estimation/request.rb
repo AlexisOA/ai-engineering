@@ -1,4 +1,7 @@
-class EstimationRequest
+# Form-backed mirror of the FastAPI ``EstimationRequest`` Pydantic schema
+# (transactional flow, Session 4). The enums are the API contract — changing
+# them here without changing the service breaks the 422 validation.
+class Estimation::Request
   include ActiveModel::Model
   include ActiveModel::Attributes
 

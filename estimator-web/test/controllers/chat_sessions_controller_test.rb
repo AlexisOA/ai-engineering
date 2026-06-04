@@ -6,7 +6,7 @@ class ChatSessionsControllerTest < ActionDispatch::IntegrationTest
     WebMock.disable_net_connect!
     @base_url = Rails.application.config.estimator_ai.base_url
     @valid_params = {
-      session_estimation_request: {
+      conversation_request: {
         transcript:   "Quiero estimar un CRM llamado Nimbus en React + Postgres para el equipo de ventas.",
         project_type: "web_saas",
         detail_level: "medium",
@@ -62,7 +62,7 @@ class ChatSessionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "form"
     assert_select "input[type=file][name='attachments[]'][multiple]"
-    assert_select "textarea[name='session_estimation_request[transcript]']"
+    assert_select "textarea[name='conversation_request[transcript]']"
   end
 
   test "POST create persists the estimation, refreshes metadata, and redirects" do
@@ -109,7 +109,7 @@ class ChatSessionsControllerTest < ActionDispatch::IntegrationTest
     chat_session = ChatSession.order(:created_at).last
 
     bad = @valid_params.deep_dup
-    bad[:session_estimation_request][:transcript] = "too short"
+    bad[:conversation_request][:transcript] = "too short"
 
     assert_no_difference -> { Estimation.count } do
       post chat_session_path(chat_session), params: bad
@@ -221,11 +221,13 @@ class ChatSessionsControllerTest < ActionDispatch::IntegrationTest
     assert_requested forwarded
   end
 
-  test "root route renders the conversational page" do
+  # Root now serves the home dashboard; the conversational page lives at its
+  # own route and is linked from the navbar and the dashboard card.
+  test "new chat session route renders the conversational page" do
     stub_request(:post, "#{@base_url}/sessions")
       .to_return(status: 201, body: { session_id: "remote-abc" }.to_json,
                  headers: { "Content-Type" => "application/json" })
-    get "/"
+    get new_chat_session_path
     assert_response :success
     assert_select "h1", "Conversational estimation"
   end

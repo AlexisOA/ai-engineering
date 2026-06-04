@@ -1,5 +1,3 @@
-require "faraday"
-
 # NOTE: This client is purely ILLUSTRATIVE. The Session 6 endpoints are an HTTP
 # contract: any HTTP client (curl, httpx, requests, fetch, ...) reaches them
 # equally well. This Rails wrapper exists only so the Master en AI Engineering
@@ -10,24 +8,20 @@ require "faraday"
 # the resulting job — both endpoints are stateless from Rails' point of view.
 
 module EstimatorAi
-  class IngestionClient
+  class IngestionClient < BaseClient
+    # Ingestion has its own error semantics (catalog decisions, async jobs),
+    # so it keeps a local taxonomy instead of the shared handle_response map.
     Error           = Class.new(StandardError)
     UnknownSource   = Class.new(Error)
     NotIncluded     = Class.new(Error)
     JobNotFound     = Class.new(Error)
     ServerError     = Class.new(Error)
 
-    def initialize(base_url: Rails.application.config.estimator_ai.base_url,
-                   timeout: Rails.application.config.estimator_ai.timeout)
-      @base_url = base_url
-      @timeout  = timeout
-    end
-
     # POST /api/v1/ingestion/runs — kicks off the ingestion. Returns the
     # job_id immediately (HTTP 202). The actual work runs as a FastAPI
     # BackgroundTask in the IA service; the caller polls ``job_status``.
     def trigger_ingestion(source_name:)
-      response = conn.post("/api/v1/ingestion/runs", { source_name: source_name })
+      response = json_conn.post("/api/v1/ingestion/runs", { source_name: source_name })
       case response.status
       when 202 then response.body
       when 404 then raise UnknownSource, source_name
@@ -40,22 +34,12 @@ module EstimatorAi
     # GET /api/v1/ingestion/jobs/{job_id}. Returns the latest snapshot of the
     # job row (status, documents_count, error_message, started_at, finished_at).
     def job_status(job_id)
-      response = conn.get("/api/v1/ingestion/jobs/#{job_id}")
+      response = json_conn.get("/api/v1/ingestion/jobs/#{job_id}")
       case response.status
       when 200 then response.body
       when 404 then raise JobNotFound, job_id
       else
         raise ServerError, "unexpected status #{response.status}"
-      end
-    end
-
-    private
-
-    def conn
-      @conn ||= Faraday.new(url: @base_url) do |f|
-        f.request :json
-        f.response :json
-        f.options.timeout = @timeout
       end
     end
   end

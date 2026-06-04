@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     FALLBACK_MODEL: str = "claude-haiku-4-5-20251001"
     LLM_TIMEOUT: int = 30
     LLM_RETRIES: int = 2
+    # Catalog of models selectable at runtime via PUT /api/v1/config/models
+    # (kept aligned with MODEL_COSTS in app/foundation/llm/wrapper.py). The
+    # endpoint filters this list by the API keys actually configured.
+    AVAILABLE_MODELS: list[str] = [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-5",
+    ]
 
     REDIS_URL: str = "redis://localhost:6379"
     CACHE_TTL: int = 86400

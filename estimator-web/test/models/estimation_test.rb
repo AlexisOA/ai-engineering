@@ -34,10 +34,10 @@ class EstimationTest < ActiveSupport::TestCase
     assert Estimation.new(valid_attrs).valid?
   end
 
-  test "to_response rebuilds an EstimationResponse from the stored jsonb" do
+  test "to_response rebuilds an Estimation::Response from the stored jsonb" do
     estimation = Estimation.create!(valid_attrs)
     response = estimation.to_response
-    assert_kind_of EstimationResponse, response
+    assert_kind_of Estimation::Response, response
     assert_equal "v1", response.prompt_version
     assert_equal 25_000, response.result.total_cost_eur
     assert_equal "Discovery", response.result.phases.first.name

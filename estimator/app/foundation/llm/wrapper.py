@@ -11,6 +11,12 @@ Design notes
   ("estimator") so LiteLLM can switch from primary to fallback transparently.
   When the caller overrides the model per-request we bypass the Router and call
   ``litellm.completion`` directly — that path has no fallback by design.
+- ``primary_model``/``fallback_model`` are PROPERTIES backed by the runtime
+  config store (Redis): the Settings UI can switch models mid-session. The
+  Router keeps the *initial* (settings) deployments — it is never rebuilt at
+  request time (thread-safety) — so an active runtime override routes through
+  the direct ``litellm.completion`` path, with the same no-fallback semantics
+  as a per-call ``model_override``.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ import structlog
 from litellm import Router
 from pydantic import BaseModel
 
+from app.foundation.llm.runtime_config import RuntimeModelConfig
 from app.generation.cag.exact import EstimationCache
 
 log = structlog.get_logger()
@@ -75,11 +82,15 @@ class LLMWrapper:
         timeout: int,
         num_retries: int,
         cache: EstimationCache,
+        runtime_config: RuntimeModelConfig | None = None,
     ):
         self.openai_api_key = openai_api_key
         self.anthropic_api_key = anthropic_api_key
-        self.primary_model = primary_model
-        self.fallback_model = fallback_model
+        # Initial (settings) models: they seed the Router deployments and act
+        # as the fallback when no runtime config store is wired (tests).
+        self._initial_primary_model = primary_model
+        self._initial_fallback_model = fallback_model
+        self._runtime_config = runtime_config
         self.timeout = timeout
         self.num_retries = num_retries
         self.cache = cache
@@ -110,6 +121,24 @@ class LLMWrapper:
         # Instructor wraps ``litellm.completion`` so we can call any of the
         # underlying providers with the same ``response_model=`` API.
         self._instructor = instructor.from_litellm(litellm.completion)
+
+    # ------------------------------------------------------------------
+    # Effective models (runtime override > settings default)
+    # ------------------------------------------------------------------
+
+    @property
+    def primary_model(self) -> str:
+        """The model every non-overridden call uses, resolved per call so a
+        runtime override (Settings UI) takes effect immediately."""
+        if self._runtime_config is not None:
+            return self._runtime_config.effective("PRIMARY_MODEL")
+        return self._initial_primary_model
+
+    @property
+    def fallback_model(self) -> str:
+        if self._runtime_config is not None:
+            return self._runtime_config.effective("FALLBACK_MODEL")
+        return self._initial_fallback_model
 
     # ------------------------------------------------------------------
     # Public API
@@ -350,21 +379,33 @@ class LLMWrapper:
 
     def _dispatch(self, *, model_override: str | None, **kwargs: Any) -> Any:
         """Call the Router (with fallback) or LiteLLM directly when the caller
-        wants a specific model."""
+        wants a specific model.
+
+        A runtime primary override behaves like a per-call ``model_override``:
+        the Router deployments are frozen at construction (never rebuilt at
+        request time), so when the effective primary differs from the one the
+        Router was built with, the call goes direct — no automatic fallback.
+        """
         if model_override:
-            api_key = (
-                self.anthropic_api_key
-                if _provider_from_model(model_override) == "anthropic"
-                else self.openai_api_key
-            )
-            return litellm.completion(
-                model=model_override,
-                api_key=api_key,
-                timeout=self.timeout,
-                num_retries=self.num_retries,
-                **kwargs,
-            )
+            return self._direct_completion(model=model_override, **kwargs)
+        effective_primary = self.primary_model
+        if effective_primary != self._initial_primary_model:
+            return self._direct_completion(model=effective_primary, **kwargs)
         return self.router.completion(model="estimator", **kwargs)
+
+    def _direct_completion(self, *, model: str, **kwargs: Any) -> Any:
+        api_key = (
+            self.anthropic_api_key
+            if _provider_from_model(model) == "anthropic"
+            else self.openai_api_key
+        )
+        return litellm.completion(
+            model=model,
+            api_key=api_key,
+            timeout=self.timeout,
+            num_retries=self.num_retries,
+            **kwargs,
+        )
 
     @staticmethod
     def _normalise_response(response: Any, *, latency_ms: int) -> dict[str, Any]:

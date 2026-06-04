@@ -20,22 +20,22 @@ class EstimationResponseTest < ActiveSupport::TestCase
     }
   end
 
-  test "from_hash builds an EstimationResponse with a nested EstimationResult" do
-    response = EstimationResponse.from_hash(sample_hash)
+  test "from_hash builds an Estimation::Response with a nested Estimation::Result" do
+    response = Estimation::Response.from_hash(sample_hash)
     assert_equal "v1", response.prompt_version
     assert_equal false, response.cached
-    assert_kind_of EstimationResult, response.result
+    assert_kind_of Estimation::Result, response.result
     assert_equal 25_000, response.result.total_cost_eur
     assert_equal 70, response.result.confidence_pct
     assert_equal 2, response.result.phases.size
-    assert_kind_of Phase, response.result.phases.first
+    assert_kind_of Estimation::Phase, response.result.phases.first
     assert_equal "Discovery", response.result.phases.first.name
     assert_equal 5_000, response.result.phases.first.cost_eur
   end
 
   test "cached flag is parsed correctly" do
     payload = sample_hash.merge("cached" => true)
-    response = EstimationResponse.from_hash(payload)
+    response = Estimation::Response.from_hash(payload)
     assert_equal true, response.cached
   end
 
@@ -43,12 +43,12 @@ class EstimationResponseTest < ActiveSupport::TestCase
     payload = sample_hash.deep_dup
     payload["result"]["summary"] = "Out of scope: the description is too vague."
     payload["result"]["confidence_pct"] = 15
-    response = EstimationResponse.from_hash(payload)
+    response = Estimation::Response.from_hash(payload)
     assert response.result.out_of_scope?
   end
 
   test "result.out_of_scope? is false for normal summaries" do
-    response = EstimationResponse.from_hash(sample_hash)
+    response = Estimation::Response.from_hash(sample_hash)
     assert_not response.result.out_of_scope?
   end
 end

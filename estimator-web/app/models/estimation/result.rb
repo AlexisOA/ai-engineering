@@ -1,4 +1,5 @@
-class EstimationResult
+# Mirror of the FastAPI ``EstimationResult`` Pydantic schema (the LLM contract).
+class Estimation::Result
   include ActiveModel::Model
   include ActiveModel::Attributes
 
@@ -17,7 +18,7 @@ class EstimationResult
     super(stringified)
     @phases = phases_data.map do |raw|
       raw = raw.transform_keys(&:to_s)
-      Phase.new(raw.slice("name", "duration_weeks", "cost_eur", "summary"))
+      Estimation::Phase.new(raw.slice("name", "duration_weeks", "cost_eur", "summary"))
     end
   end
 
