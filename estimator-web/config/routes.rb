@@ -25,6 +25,9 @@ Rails.application.routes.draw do
     resources :chunking_comparisons, only: [ :index, :new, :create, :show ]
   end
 
+  # Runtime model configuration of the AI service (Ajustes).
+  resource :ai_settings, only: [ :show, :update ]
+
   # Landing dashboard: one card per context of the Master's journey.
   root "home#index"
 end

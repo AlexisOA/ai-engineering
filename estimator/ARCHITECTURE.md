@@ -32,7 +32,7 @@ app/
 ├── dependencies.py         # composition root: wiring de singletons
 │
 ├── foundation/             # plomería sin opinión de arquitectura AI
-│   ├── llm/                #   LLMWrapper (LiteLLM + Instructor, provider-agnóstico)
+│   ├── llm/                #   LLMWrapper (LiteLLM + Instructor) + runtime_config.py (overrides de modelo en Redis)
 │   ├── prompts/            #   loader Jinja2 + plantillas versionadas (estimation/v1..v3, …)
 │   ├── guardrails/         #   input (moderación+injection+PII) / output (filter de scope)
 │   ├── attachments/        #   extracción de texto de PDF/DOCX subidos
@@ -55,7 +55,8 @@ app/
     ├── estimations.py      #   POST /api/v1/estimate
     ├── sessions.py         #   /sessions/*
     ├── ingestion.py        #   /api/v1/ingestion/*
-    └── embeddings.py       #   POST /embeddings/ingest
+    ├── embeddings.py       #   POST /embeddings/ingest
+    └── config.py           #   GET/PUT /api/v1/config/models (modelos en runtime)
 ```
 
 ## 3. Reglas de dependencias (MUST / MUST NOT)
@@ -130,7 +131,8 @@ POST /api/v1/estimate
 
 ## 8. Contratos públicos que NO se rompen
 
-- **Rutas HTTP**: `/api/v1/estimate`, `/sessions/*`, `/api/v1/ingestion/*`, `/embeddings/ingest`.
+- **Rutas HTTP**: `/api/v1/estimate`, `/sessions/*`, `/api/v1/ingestion/*`, `/embeddings/ingest`,
+  `/api/v1/config/models`.
   El cliente Rails (`estimator-web`) depende de ellas y de la forma JSON de
   `EstimationResponse` / `ACBResponse`.
 - **`EstimationResult`** (`domain/schemas/estimation.py`): el orden de campos importa para

@@ -28,6 +28,7 @@ from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import ParserRegistry, default_registry
 from app.generation.cag.exact import EstimationCache
 from app.domain.estimation_service import EstimationService
+from app.foundation.llm.runtime_config import RuntimeModelConfig
 from app.foundation.llm.wrapper import LLMWrapper
 from app.generation.conversation.store import SessionStore
 
@@ -41,6 +42,17 @@ def get_cache() -> EstimationCache:
 
 
 @lru_cache
+def get_runtime_config() -> RuntimeModelConfig:
+    """Redis-backed override store for the LLM model knobs (Settings UI).
+
+    The singleton is just the Redis handle — freshness comes from reading
+    Redis inside on every call, not from rebuilding this object.
+    """
+    settings = get_settings()
+    return RuntimeModelConfig.from_url(settings.REDIS_URL, settings)
+
+
+@lru_cache
 def get_llm_wrapper() -> LLMWrapper:
     settings = get_settings()
     return LLMWrapper(
@@ -51,6 +63,7 @@ def get_llm_wrapper() -> LLMWrapper:
         timeout=settings.LLM_TIMEOUT,
         num_retries=settings.LLM_RETRIES,
         cache=get_cache(),
+        runtime_config=get_runtime_config(),
     )
 
 
@@ -123,20 +136,23 @@ def get_semantic_chunker() -> SemanticChunker:
     return SemanticChunker(api_key=settings.OPENAI_API_KEY, model=settings.EMBEDDING_MODEL)
 
 
-@lru_cache
+# NOT @lru_cache: these chunkers are rebuilt per /embeddings/compare request
+# (construction is cheap — the underlying API clients stay singletons) so a
+# runtime model override takes effect on the next comparison.
 def get_propositional_chunker() -> PropositionalChunker:
     client = get_openai_client()
     if client is None:
         raise RuntimeError("PropositionalChunker requires OPENAI_API_KEY.")
-    return PropositionalChunker(client=client, model=get_settings().PROPOSITIONAL_CHUNKER_MODEL)
+    model = get_runtime_config().effective("PROPOSITIONAL_CHUNKER_MODEL")
+    return PropositionalChunker(client=client, model=model)
 
 
-@lru_cache
 def get_contextual_retrieval_chunker() -> ContextualRetrievalChunker:
     client = get_anthropic_client()
     if client is None:
         raise RuntimeError("ContextualRetrievalChunker requires ANTHROPIC_API_KEY.")
-    return ContextualRetrievalChunker(client=client, model=get_settings().CONTEXTUAL_CHUNKER_MODEL)
+    model = get_runtime_config().effective("CONTEXTUAL_CHUNKER_MODEL")
+    return ContextualRetrievalChunker(client=client, model=model)
 
 
 # Registry: strategy name → factory. ``structural`` reuses ``get_chunker``.
@@ -220,6 +236,7 @@ def get_estimation_service() -> EstimationService:
         conversational_prompt_version=settings.CONVERSATIONAL_PROMPT_VERSION,
         critic_model=settings.CRITIC_MODEL,
         boss_max_iterations=settings.BOSS_MAX_ITERATIONS,
+        runtime_config=get_runtime_config(),
     )
 
 

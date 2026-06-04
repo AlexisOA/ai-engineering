@@ -90,6 +90,7 @@ class EstimationService:
         anchor_detection_mode: str = "heuristic",
         critic_model: str = "gpt-4o-mini",
         boss_max_iterations: int = 2,
+        runtime_config: Any | None = None,
     ) -> None:
         self.llm_wrapper = llm_wrapper
         self.exact_cache = exact_cache
@@ -97,11 +98,32 @@ class EstimationService:
         self.openai_client = openai_client
         self.prompt_version = prompt_version
         self.conversational_prompt_version = conversational_prompt_version
+        # Constructor values are the fallbacks; with a runtime config wired
+        # (Settings UI), the auxiliary models resolve per call instead.
         self.metadata_extractor_model = metadata_extractor_model
         self.compression_model = compression_model
         self.anchor_detection_mode = anchor_detection_mode
         self.critic_model = critic_model
         self.boss_max_iterations = boss_max_iterations
+        self._runtime_config = runtime_config
+
+    # ------------------------------------------------------------------
+    # Effective auxiliary models (runtime override > constructor default)
+    # ------------------------------------------------------------------
+
+    def _effective_model(self, key: str, fallback: str) -> str:
+        if self._runtime_config is not None:
+            return self._runtime_config.effective(key)
+        return fallback
+
+    def _metadata_model(self) -> str:
+        return self._effective_model("METADATA_EXTRACTOR_MODEL", self.metadata_extractor_model)
+
+    def _compression_model(self) -> str:
+        return self._effective_model("COMPRESSION_MODEL", self.compression_model)
+
+    def _critic_model(self) -> str:
+        return self._effective_model("CRITIC_MODEL", self.critic_model)
 
     def estimate(self, request: EstimationRequest) -> EstimationResponse:
         # 1. Input guardrails — raises InputGuardrailViolation on rejection.
@@ -117,9 +139,12 @@ class EstimationService:
                 result=result, prompt_version=self.prompt_version, cached=True
             )
 
-        # 3. Semantic cache lookup.
+        # 3. Semantic cache lookup (bucketed by model: a hit from another
+        # model must never be served — the primary can change at runtime).
         if self.semantic_cache is not None:
-            semantic_hit = self.semantic_cache.lookup(request, self.prompt_version)
+            semantic_hit = self.semantic_cache.lookup(
+                request, self.prompt_version, self.llm_wrapper.primary_model
+            )
             if semantic_hit is not None:
                 log.info("estimation_cache_hit", kind="semantic")
                 return EstimationResponse(
@@ -158,7 +183,9 @@ class EstimationService:
             },
         )
         if self.semantic_cache is not None:
-            self.semantic_cache.store(request, result, self.prompt_version)
+            self.semantic_cache.store(
+                request, result, self.prompt_version, self.llm_wrapper.primary_model
+            )
 
         # 8. Return.
         return EstimationResponse(result=result, prompt_version=self.prompt_version, cached=False)
@@ -254,7 +281,7 @@ class EstimationService:
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,
-            compression_model=self.compression_model,
+            compression_model=self._compression_model(),
             anchor_detection_mode=self.anchor_detection_mode,
         )
 
@@ -265,7 +292,7 @@ class EstimationService:
             transcript=transcript,
             result=result,
             llm_wrapper=self.llm_wrapper,
-            model=self.metadata_extractor_model,
+            model=self._metadata_model(),
         )
 
         # 8. Emit the unified per-turn observation. Single structured event
@@ -372,7 +399,7 @@ class EstimationService:
             return enforce_scope_response(draft)
 
         # 4. Build the critic callable.
-        critic = Critic(llm_wrapper=self.llm_wrapper, model=self.critic_model)
+        critic = Critic(llm_wrapper=self.llm_wrapper, model=self._critic_model())
 
         def _critic(draft: EstimationResult) -> CriticFeedback:
             return critic.review(
@@ -391,7 +418,7 @@ class EstimationService:
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,
-            compression_model=self.compression_model,
+            compression_model=self._compression_model(),
             anchor_detection_mode=self.anchor_detection_mode,
         )
 
@@ -401,7 +428,7 @@ class EstimationService:
             transcript=transcript,
             result=final_result,
             llm_wrapper=self.llm_wrapper,
-            model=self.metadata_extractor_model,
+            model=self._metadata_model(),
         )
 
         return ACBResponse(

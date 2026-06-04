@@ -9,6 +9,7 @@ Organized by **contexts mirroring the Master's modules** — `estimation` (S04, 
 - **`/`** — home dashboard: un card por contexto del máster.
 - **`/estimations`** — estimación transaccional (S04).
 - **`/chat_sessions`** — conversación multi-turno con adjuntos, tiers y modo Actor-Critic-Boss (S05).
+- **`/ai_settings`** — **Ajustes**: cambia los modelos LLM del servicio (primario, fallback, critic, metadata, compression y chunkers) **en caliente** vía `PUT /api/v1/config/models` — sin editar `.env` ni recrear contenedores. El modelo primario activo se muestra siempre como badge en la navbar (oculto si el servicio está caído). «Por defecto» restaura el valor del `.env`.
 - **`/rag/chunking_comparisons`** — **Chunking Lab** (S07): comparativa de las 8 estrategias de chunking sobre el corpus de 17 presupuestos (`lib/estimator_ai/data/`), con estadísticas por estrategia (tokens, huérfanos/obesos, coste, segundos), barras de coste y playground de retrieval (top-k por similitud coseno, badges parent/child en `hierarchical`). Cada run se persiste (`chunking_comparisons`, payload JSONB) para revisitar resultados caros (contextual_retrieval ≈ $0.14 / 3 min) sin re-pagar. Las estrategias de pago son opt-in y van avisadas en el formulario; la llamada usa un timeout propio de 600 s.
 
 ## Stack

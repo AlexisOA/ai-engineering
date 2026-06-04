@@ -26,6 +26,7 @@ app/
 │   ├── estimations_client.rb     #   POST /api/v1/estimate                       (S04)
 │   ├── sessions_client.rb        #   /sessions/* + estimate-acb                  (S05)
 │   ├── embeddings_client.rb      #   POST /embeddings/compare                    (S07)
+│   ├── config_client.rb          #   GET/PUT /api/v1/config/models               (Ajustes)
 │   ├── ingestion_client.rb       #   /api/v1/ingestion/* (ilustrativo, S06)
 │   └── budget_corpus.rb          #   corpus estático (lib/estimator_ai/data/)
 │
@@ -36,14 +37,18 @@ app/
 │   │   └── request · response · result · phase
 │   ├── conversation/             # CONTEXTO conversación + ACB (S05)
 │   │   └── request
-│   └── rag/                      # CONTEXTO RAG (S07; crece en S08+)
-│       ├── chunking_comparison   # AR — persistencia de runs (tabla chunking_comparisons)
-│       ├── strategy              # catálogo de las 8 estrategias (espejo de ALL_STRATEGIES)
-│       └── comparison_response · stats · token_distribution · query_result · top_chunk
+│   ├── rag/                      # CONTEXTO RAG (S07; crece en S08+)
+│   │   ├── chunking_comparison   # AR — persistencia de runs (tabla chunking_comparisons)
+│   │   ├── strategy              # catálogo de las 8 estrategias (espejo de ALL_STRATEGIES)
+│   │   └── comparison_response · stats · token_distribution · query_result · top_chunk
+│   └── ai/                       # CONTEXTO configuración del servicio (Ajustes)
+│       ├── model_config          # un knob: effective/default/overridden + label/descr.
+│       └── catalog               # snapshot completo del GET (knobs + available_models)
 │
 ├── controllers/
 │   ├── home_controller.rb        # dashboard raíz (un card por contexto)
 │   ├── estimations_controller.rb · chat_sessions_controller.rb
+│   ├── ai_settings_controller.rb # Ajustes: overrides de modelo en runtime
 │   └── rag/chunking_comparisons_controller.rb
 │
 └── views/  (espejo de controllers; layout con navbar por contexto)
@@ -96,4 +101,5 @@ app/
 | `estimation` | S04 (output estructurado, guardrails, cache) | `POST /api/v1/estimate` | `/estimations` |
 | `conversation` | S05 (memoria, adjuntos, tiers, ACB) | `/sessions/*`, `/sessions/:id/estimate(-acb)` | `/chat_sessions` |
 | `rag` | S07 (chunking + embeddings) | `POST /embeddings/compare` | `/rag/chunking_comparisons` |
+| `ai` (Ajustes) | transversal | `GET/PUT /api/v1/config/models` | `/ai_settings` + badge en navbar |
 | (ingestion) | S06 (ilustrativo) | `/api/v1/ingestion/*` | — sin UI |

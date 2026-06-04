@@ -35,6 +35,15 @@
                 class: "font-bold tracking-tight hover:text-white #{controller_name == 'chat_sessions' ? 'text-brand' : 'text-white/80'}" %>
           <%= link_to "RAG Lab", new_rag_chunking_comparison_path,
                 class: "font-bold tracking-tight hover:text-white #{controller_path.start_with?('rag/') ? 'text-brand' : 'text-white/80'}" %>
+          <%= link_to "Ajustes", ai_settings_path,
+                class: "font-bold tracking-tight hover:text-white #{controller_name == 'ai_settings' ? 'text-brand' : 'text-white/80'}" %>
+          <%# Active primary model, always visible during live sessions. Hidden when the service is down. %>
+          <% if (active_model = current_primary_model) %>
+            <span class="px-2 py-0.5 rounded bg-brand/20 text-brand text-xs font-bold tracking-tight font-mono"
+                  title="Modelo primario activo del servicio IA">
+              <%= active_model %>
+            </span>
+          <% end %>
         </nav>
       </div>
     </header>
