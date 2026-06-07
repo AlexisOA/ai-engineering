@@ -1,5 +1,6 @@
 import time
 from dataclasses import dataclass
+from collections.abc import Generator
 
 import structlog
 
@@ -243,6 +244,31 @@ def generate_estimation(
     result["latency_ms"] = int((time.perf_counter() - t0) * 1000)
 
     return result
+
+
+def stream_estimation_openai(transcription: str, model: str) -> Generator[str, None, None]:
+    from openai import OpenAI
+
+    settings = get_settings()
+    system_prompt = build_system_prompt(
+        example_format="markdown",
+        num_examples=5,
+        use_examples=True,
+    )
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    with client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": transcription},
+        ],
+        stream=True,
+    ) as stream:
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
 
 # ---------------------------------------------------------------------------

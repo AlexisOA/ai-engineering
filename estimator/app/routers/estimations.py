@@ -1,13 +1,22 @@
 import structlog
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
-from app.schemas.estimation import EstimationRequest, EstimationResponse
+from app.schemas.estimation import EstimationRequest, EstimationResponse, StreamEstimationRequest
 from app.services.evaluation import evaluate_estimation_structure
-from app.services.llm_service import GenerationOptions, LLMServiceError, generate_estimation
+from app.services.llm_service import GenerationOptions, LLMServiceError, generate_estimation, stream_estimation_openai
 
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1", tags=["estimations"])
+
+
+@router.post("/estimate/stream")
+async def stream_estimation(request: StreamEstimationRequest) -> StreamingResponse:
+    return StreamingResponse(
+        stream_estimation_openai(request.transcription, request.model),
+        media_type="text/plain",
+    )
 
 
 @router.post("/estimate", response_model=EstimationResponse)

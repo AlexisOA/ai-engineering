@@ -6,6 +6,11 @@ PreprocessingMode = Literal["none", "inline_cleaning", "two_phase"]
 ExampleFormat = Literal["markdown", "json", "narrative"]
 
 
+class StreamEstimationRequest(BaseModel):
+    transcription: str
+    model: str = "gpt-4o-mini"
+
+
 class EstimationRequest(BaseModel):
     """Incoming request containing a meeting transcription to estimate."""
 
