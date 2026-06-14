@@ -142,3 +142,61 @@ La URL del backend se lee de `ESTIMATOR_API_BASE_URL` (default `http://localhost
 ---
 
 > Este proyecto forma parte del **Master en AI Engineering** y servira como base para evolucionar hacia una arquitectura RAG con base de datos vectorial en modulos posteriores.
+
+
+## Pre-session 04 — Prompts versionados con Jinja2
+
+En esta entrega se añade una primera versión de prompts renderizados con Jinja2 para separar la construcción del prompt del código de negocio.
+
+La nueva estructura de prompts está en:
+
+```text
+app/prompts/
+├── loader.py
+└── estimation/
+    └── v1/
+        ├── system.j2
+        ├── user.j2
+        └── examples.j2
+```
+
+El objetivo es poder versionar prompts de forma explícita y probar su contenido sin depender de una llamada real al LLM, solo ejecutando el test.
+
+
+Si se clona el proyecto desde cero, basta con sincronizar dependencias:
+
+```bash
+uv sync
+```
+
+### Levantar el proyecto
+
+La API y Redis se levantan con Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+La API queda disponible en:
+
+```text
+http://localhost:8000
+```
+
+### Ejecutar el test de la tarea
+
+El test específico de esta entrega es:
+
+```bash
+uv run pytest tests/prompts/test_estimation_v1.py
+```
+
+### Nota sobre la suite completa
+
+En esta rama el test principal de la entrega es:
+
+```bash
+tests/prompts/test_estimation_v1.py
+```
+
+La suite completa puede contener tests heredados de sesiones anteriores que no forman parte directa de esta tarea.

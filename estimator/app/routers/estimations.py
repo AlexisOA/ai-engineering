@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse
 
 from app.dependencies import get_llm_wrapper
@@ -11,47 +11,30 @@ from app.schemas.estimation import (
     EstimationResponse,
     StreamEstimationRequest,
 )
-from app.services.evaluation import evaluate_estimation_structure
 from app.services.llm_service import (
-    GenerationOptions,
-    LLMServiceError,
     build_system_prompt,
-    generate_estimation,
 )
 from app.services.llm_wrapper import LLMWrapper
-
+from openai import OpenAI
+from app.prompts.loader import render_estimation_prompt
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1", tags=["estimations"])
 
 
-@router.post("/estimate", response_model=EstimationResponse)
-async def create_estimation(request: EstimationRequest) -> EstimationResponse:
-    """Receive a meeting transcription and return a software project estimation."""
-    opts = GenerationOptions(
-        preprocessing=request.preprocessing,
-        example_format=request.example_format,
-        num_examples=request.num_examples,
-        use_examples=request.use_examples,
-        model=request.model,
-        max_tokens=request.max_tokens,
-        thinking_budget=request.thinking_budget,
+@router.post("/estimate/task-4")
+def estimate(request: EstimationRequest) -> EstimationResponse:
+    client = OpenAI()
+    system, user = render_estimation_prompt(request)
+
+    response = client.responses.create(
+        model="gpt-4o-mini",
+        input=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
     )
-
-    try:
-        result = generate_estimation(request.transcription, opts)
-    except LLMServiceError as exc:
-        log.error("estimation_endpoint_error", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
-
-    validation = (
-        evaluate_estimation_structure(result["estimation"], result["finish_reason"])
-        if request.evaluate
-        else None
-    )
-
-    return EstimationResponse(**result, validation=validation)
-
+    return EstimationResponse(text=response.output_text)
 
 @router.post("/estimate/stream")
 async def create_estimation_stream(
