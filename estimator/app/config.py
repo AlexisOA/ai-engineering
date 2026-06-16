@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     AVAILABLE_MODELS: list[str] = [
         "gpt-4o-mini",
         "gpt-4o",
+        "gpt-5",
+        "gpt-5-mini",
         "claude-haiku-4-5-20251001",
         "claude-sonnet-4-5",
     ]
@@ -99,6 +101,25 @@ class Settings(BaseSettings):
     # parent budget. Prompt caching makes the (large) parent document cheap to
     # reuse across the chunks of the same budget.
     CONTEXTUAL_CHUNKER_MODEL: str = "claude-sonnet-4-5"
+
+    # --- Session 9 fields (RAG estimation: transcript → grounded estimate) ---
+    # Query understanding distills a transcript into an EstimationQuery; a small
+    # model is enough. Generation reasons over retrieved budgets, so it uses the
+    # strongest model with medium reasoning effort. Both go through LLMWrapper.
+    REFORMULATION_MODEL: str = "gpt-5-mini"
+    GENERATION_MODEL: str = "gpt-5"
+    GENERATION_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "medium"
+    # Retrieval knobs (locked defaults from the Session 9 articles).
+    RETRIEVAL_TOP_K: int = 10
+    RETRIEVAL_DISTANCE_THRESHOLD: float = 0.6
+    # Token budget for the assembled <source> context block (tiktoken cl100k_base).
+    MAX_CONTEXT_TOKENS: int = 16384
+    # Idempotency cache for POST /v1/estimate/from-transcript (seconds; 24h).
+    IDEMPOTENCY_TTL: int = 86400
+    # API keys for the two Session 9 routers. None disables the router (401 on
+    # every request) — set them in .env to enable the endpoints.
+    RETRIEVAL_API_KEY: str | None = None
+    ESTIMATE_API_KEY: str | None = None
 
     @model_validator(mode="after")
     def validate_at_least_one_api_key(self) -> "Settings":

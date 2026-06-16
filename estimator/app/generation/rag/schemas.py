@@ -130,3 +130,131 @@ class SearchResponse(BaseModel):
     k: int
     search_time_ms: int = Field(ge=0)
     results: list[SearchHit]
+
+
+# ---------------------------------------------------------------------------
+# Session 9 — RAG estimation pipeline (query understanding → generation).
+#
+# These types implement the locked contract from the Session 9 articles. They
+# live alongside the Session 8 search types above; nothing here replaces them.
+# ---------------------------------------------------------------------------
+
+Scale = Literal["small", "medium", "large", "unknown"]
+Confidence = Literal["high", "medium", "low", "insufficient"]
+Relevance = Literal["primary", "supporting", "tangential"]
+Impact = Literal["high", "medium", "low"]
+
+
+class EstimationQuery(BaseModel):
+    """Structured brief distilled from a raw meeting transcript.
+
+    This is the output of the query-understanding stage: a transcript is full of
+    digressions, so we extract only what drives retrieval (what to build, with
+    which tech, under which constraints) instead of embedding the raw text.
+    """
+
+    function: str = Field(description="Functional summary of the project.")
+    technologies: list[str] = Field(default_factory=list)
+    sector: str | None = None
+    scale: Scale = "unknown"
+    country: str | None = None
+    regulations: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+
+
+class RetrievedChunk(BaseModel):
+    """One chunk returned by the metadata-filtered retriever.
+
+    ``id`` is the chunk's DB primary key (cited as a ``source id`` downstream).
+    ``sector``/``project_year`` are flattened from the chunk's JSONB metadata
+    (``client_sector``/``year``) so the generator and the citation validator see
+    a stable, typed shape.
+    """
+
+    id: int
+    content: str
+    sector: str
+    project_year: int
+    chunk_type: str
+    distance: float = Field(description="Cosine distance (lower = more similar).")
+
+
+class RetrievalResult(BaseModel):
+    """Outcome of the retrieval stage."""
+
+    chunks: list[RetrievedChunk]
+    low_confidence: bool = Field(
+        description="True when no chunk crossed the distance threshold (soft-fail)."
+    )
+    candidates_evaluated: int = Field(
+        ge=0, description="Total chunks scored before applying the threshold/limit."
+    )
+
+
+class SourceCitation(BaseModel):
+    """A reference from the estimate back to a retrieved chunk."""
+
+    source_id: int = Field(description="DB id of the cited chunk (a RetrievedChunk.id).")
+    relevance: Relevance
+    used_for: str = Field(description="What this source contributed to the estimate.")
+
+
+class Assumption(BaseModel):
+    """An estimate component NOT backed by any retrieved source."""
+
+    description: str
+    impact: Impact
+    rationale: str
+
+
+class CostComponent(BaseModel):
+    """One line of the cost breakdown, in engineer-days."""
+
+    name: str
+    engineer_days: int = Field(ge=0)
+    sources: list[int] = Field(
+        default_factory=list, description="Chunk ids that back this component."
+    )
+
+
+class Estimate(BaseModel):
+    """Grounded estimate produced from retrieved historical budgets.
+
+    Hours-based (engineer-days) with mandatory citations — distinct from the
+    Session 4 ``EstimationResult`` (euros/weeks/phases). When the retrieved
+    context is insufficient, ``confidence='insufficient'`` and the numeric
+    totals stay ``None`` (enforced by :func:`validation.check_coherence`).
+    """
+
+    total_engineer_days: int | None = None
+    cost_breakdown: list[CostComponent] = Field(default_factory=list)
+    duration_weeks: int | None = None
+    sources: list[SourceCitation] = Field(default_factory=list)
+    assumptions: list[Assumption] = Field(default_factory=list)
+    confidence: Confidence
+    reasoning: str = Field(description="How the estimate was derived from the sources.")
+    insufficient_context_explanation: str | None = None
+
+
+# ---- HTTP request models for the Session 9 routers ------------------------
+# Named ``RetrievalRequest``/``EstimateRequest`` (not ``SearchRequest``) to
+# avoid colliding with the Session 8 ``SearchRequest`` above.
+
+
+class RetrievalRequest(BaseModel):
+    """Payload for ``POST /v1/retrieval/search`` (threshold + structural filters)."""
+
+    query_text: str = Field(min_length=10, max_length=2000)
+    top_k: int = Field(default=10, ge=1, le=30)
+    distance_threshold: float = Field(default=0.6, ge=0.0, le=2.0)
+    sectors: list[str] | None = None
+    project_year_min: int | None = Field(default=None, ge=2010, le=2100)
+    project_year_max: int | None = Field(default=None, ge=2010, le=2100)
+    chunk_types: list[str] | None = None
+
+
+class EstimateRequest(BaseModel):
+    """Payload for ``POST /v1/estimate/from-transcript``."""
+
+    transcript: str = Field(min_length=100, max_length=50_000)
+    idempotency_key: str | None = Field(default=None, max_length=128)

@@ -37,7 +37,7 @@ uv run ruff format .
 docker compose up --build
 ```
 
-Service listens on `http://localhost:8000`; `/docs` (Swagger) and `/redoc` are enabled. Health probe at `GET /health`. Main API endpoint is `POST /api/v1/estimate`.
+Service listens on `http://localhost:8000`; `/docs` (Swagger) and `/redoc` are enabled. Health probe at `GET /health`. Main API endpoints: `POST /api/v1/estimate` (S04 CAG estimate) and, from S09, `POST /v1/retrieval/search` + `POST /v1/estimate/from-transcript` (RAG retrieval + grounded estimate; see the Session 9 design point below).
 
 ## Architecture (layered: foundation / domain / generation / api)
 
@@ -96,6 +96,10 @@ Key design points future changes should respect:
 - **Settings are a cached singleton** via `app/config.py::get_settings` (`@lru_cache`). Any change to `.env` requires recreating the container (`docker compose up -d --force-recreate`); a `--reload` is not enough. **Exception: the LLM model knobs** (`PRIMARY_MODEL`, `FALLBACK_MODEL`, `CRITIC_MODEL`, metadata/compression/chunker models) can be overridden at runtime via `PUT /api/v1/config/models` (Redis-backed `app/foundation/llm/runtime_config.py`, surfaced in the Rails "Ajustes" tab) — overrides survive `--reload` and restarts, and both caches partition by model.
 - **Logging** is `structlog`. JSON in `production`, console in dev. Use `structlog.get_logger()` rather than stdlib `logging`.
 - **The LLM wrapper bypasses the Router for streaming and for structured calls** (see `_dispatch`). LiteLLM's Router does round-robin between deployments, which would non-deterministically route to a fallback that may be unreachable. For deterministic behaviour `complete_structured` always uses the primary model directly.
+- **Session 9 closes the transcript → estimate loop (RAG generation).** A second, RAG-native estimate path lives entirely in `app/generation/rag/` and is exposed by two independently-secured routers in `app/api/routers/`:
+  - `POST /v1/retrieval/search` (auth `RETRIEVAL_API_KEY`, 120/min) — metadata-filtered k-NN with a relevance threshold + soft-fail. It supersedes the unauthenticated Session 8 `POST /search`, which stays only for backwards compatibility (Chunking Lab / S08 demos).
+  - `POST /v1/estimate/from-transcript` (auth `ESTIMATE_API_KEY`, 10/min, idempotent on `idempotency_key`) — runs `estimate_from_transcript`: `reformulate_query` → `compose_search_text` + embed → `search_chunks` (soft-fail short-circuits to `confidence="insufficient"`) → `truncate_to_token_budget` → `build_context_block` (XML `<source>` delimiters) → `generate_estimate` → `validate_citations` (one corrective retry on fabricated ids) → coherence check.
+  This path **reuses `LLMWrapper`** (Instructor + LiteLLM) for both reformulation (`REFORMULATION_MODEL`, default `gpt-5-mini`) and generation (`GENERATION_MODEL`, default `gpt-5`, `reasoning_effort="medium"`) — NOT the raw OpenAI Responses API. It emits the hours-based `Estimate` schema (`total_engineer_days` + mandatory `SourceCitation`s + `Assumption`s), distinct from and coexisting with the Session 4 euro/weeks `EstimationResult`. Cross-cutting: per-API-key rate limiting (`app/api/rate_limiting.py`, slowapi), constant-time key checks (`app/api/security.py`, `secrets.compare_digest`), idempotency store (`app/generation/rag/idempotency.py`, Redis or in-process fallback), and an `X-Request-ID` correlation header set by middleware in `app/main.py` (per-stage logs via `log_stage`).
 
 ## Configuration
 
@@ -112,6 +116,13 @@ Session 4 vars:
 - `SEMANTIC_CACHE_THRESHOLD` — cosine similarity threshold (0..1). 0.85 default = the typical range mentioned in the live guide. Lower = more hits, more false positives.
 - `SEMANTIC_CACHE_TTL` — seconds (24h default).
 - `SEMANTIC_CACHE_LOG_ONLY` — when `true`, the cache logs would-be hits but never serves them. Use it to calibrate the threshold against real traffic before flipping on.
+
+Session 9 vars (RAG estimation):
+- `RETRIEVAL_API_KEY` / `ESTIMATE_API_KEY` — independent keys for the two routers (header `X-API-Key`). Blank disables the router (401 on every request).
+- `REFORMULATION_MODEL` / `GENERATION_MODEL` / `GENERATION_REASONING_EFFORT` — default `gpt-5-mini` / `gpt-5` / `medium`. In `AVAILABLE_MODELS`, so switchable at runtime via the Ajustes tab.
+- `RETRIEVAL_TOP_K` / `RETRIEVAL_DISTANCE_THRESHOLD` — locked defaults `10` / `0.6` (cosine distance).
+- `MAX_CONTEXT_TOKENS` — token budget for the assembled `<source>` block (tiktoken `cl100k_base`; default 16384).
+- `IDEMPOTENCY_TTL` — seconds (24h). Idempotency store uses `REDIS_URL` when reachable, else an in-process dict.
 
 ## Docker
 
