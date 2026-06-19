@@ -34,7 +34,9 @@
           <%= link_to "Conversación", new_chat_session_path,
                 class: "font-bold tracking-tight hover:text-white #{controller_name == 'chat_sessions' ? 'text-brand' : 'text-white/80'}" %>
           <%= link_to "RAG Lab", new_rag_chunking_comparison_path,
-                class: "font-bold tracking-tight hover:text-white #{controller_path.start_with?('rag/') ? 'text-brand' : 'text-white/80'}" %>
+                class: "font-bold tracking-tight hover:text-white #{controller_name == 'chunking_comparisons' ? 'text-brand' : 'text-white/80'}" %>
+          <%= link_to "RAG Wizard", new_rag_estimation_run_path,
+                class: "font-bold tracking-tight hover:text-white #{controller_name == 'estimation_runs' ? 'text-brand' : 'text-white/80'}" %>
           <%= link_to "Ajustes", ai_settings_path,
                 class: "font-bold tracking-tight hover:text-white #{controller_name == 'ai_settings' ? 'text-brand' : 'text-white/80'}" %>
           <%# Active primary model, always visible during live sessions. Hidden when the service is down. %>

@@ -108,7 +108,17 @@ class Settings(BaseSettings):
     # strongest model with medium reasoning effort. Both go through LLMWrapper.
     REFORMULATION_MODEL: str = "gpt-5-mini"
     GENERATION_MODEL: str = "gpt-5"
-    GENERATION_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "medium"
+    # "high" drives a deeper, more consistent module→task decomposition (the S09
+    # article used "medium"; we raise it for the granular modular breakdown).
+    GENERATION_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "high"
+    # Token ceiling (reasoning + output) for the RAG structured calls. gpt-5 is a
+    # reasoning model: its reasoning tokens count against this budget, so the
+    # 4000 wrapper default leaves nothing for the JSON and the call truncates
+    # (finish_reason='length'). Generous headroom so high-effort reasoning can
+    # finish AND emit the larger nested (modules→tasks) Estimate. It is a CAP,
+    # not a target — the model only spends what it needs, so a high value adds no
+    # latency on its own.
+    GENERATION_MAX_TOKENS: int = 64000
     # Retrieval knobs (locked defaults from the Session 9 articles).
     RETRIEVAL_TOP_K: int = 10
     RETRIEVAL_DISTANCE_THRESHOLD: float = 0.6

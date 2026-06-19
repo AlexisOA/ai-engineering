@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_06_04_150000) do
+ActiveRecord::Schema[8.0].define(version: 2026_06_17_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -35,6 +35,22 @@ ActiveRecord::Schema[8.0].define(version: 2026_06_04_150000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["created_at"], name: "index_chunking_comparisons_on_created_at"
+  end
+
+  create_table "estimation_runs", force: :cascade do |t|
+    t.text "transcript", null: false
+    t.string "status", default: "started", null: false
+    t.string "current_step", default: "transcript", null: false
+    t.jsonb "reformulation", default: {}, null: false
+    t.jsonb "retrieval", default: {}, null: false
+    t.jsonb "augmentation", default: {}, null: false
+    t.jsonb "generation", default: {}, null: false
+    t.jsonb "adjusted_breakdown", default: {}, null: false
+    t.string "idempotency_key"
+    t.integer "duration_ms"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_estimation_runs_on_created_at"
   end
 
   create_table "estimations", force: :cascade do |t|

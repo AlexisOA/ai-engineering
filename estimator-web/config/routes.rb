@@ -21,8 +21,21 @@ Rails.application.routes.draw do
   end
 
   # Session 7 RAG context: chunking strategy comparison lab.
+  # Session 9 RAG context: the transcript → grounded-estimate wizard. One
+  # canonical resource + a member action per pipeline stage (each re-runnable),
+  # plus the human-verification PATCH.
   namespace :rag do
     resources :chunking_comparisons, only: [ :index, :new, :create, :show ]
+
+    resources :estimation_runs, only: [ :index, :new, :create, :show ] do
+      member do
+        post  :reformulate
+        post  :retrieve
+        post  :assemble
+        post  :generate
+        patch :verify
+      end
+    end
   end
 
   # Runtime model configuration of the AI service (Ajustes).

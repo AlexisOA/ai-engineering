@@ -86,6 +86,10 @@ async def _generate(
             response_model=Estimate,
             model_override=settings.GENERATION_MODEL,
             reasoning_effort=settings.GENERATION_REASONING_EFFORT,
+            # gpt-5 reasoning tokens count against max_tokens; the 4000 default
+            # is exhausted by reasoning alone and truncates the JSON. See
+            # Settings.GENERATION_MAX_TOKENS.
+            max_tokens=settings.GENERATION_MAX_TOKENS,
         )
         return estimate
     except Exception as exc:  # noqa: BLE001
@@ -210,8 +214,9 @@ async def estimate_from_transcript(
     if not check_coherence(estimate):
         feedback = (
             'when confidence is "insufficient", total_engineer_days and '
-            "duration_weeks must be null and insufficient_context_explanation "
-            "must be filled; otherwise provide the numbers."
+            "duration_weeks must be null, modules must be empty and "
+            "insufficient_context_explanation must be filled; otherwise provide "
+            "the modules, tasks and numbers."
         )
         with log_stage("coherence_repair", request_id):
             estimate = await _generate(context_block, query, feedback=feedback)

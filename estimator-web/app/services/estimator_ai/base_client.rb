@@ -21,9 +21,13 @@ module EstimatorAi
 
   class BaseClient
     def initialize(base_url: Rails.application.config.estimator_ai.base_url,
-                   timeout:  Rails.application.config.estimator_ai.timeout)
+                   timeout:  Rails.application.config.estimator_ai.timeout,
+                   default_headers: {})
       @base_url = base_url
       @timeout  = timeout
+      # Headers applied to every request of this client (e.g. an X-API-Key for
+      # the Session 9 endpoints). Empty by default → existing clients unchanged.
+      @default_headers = default_headers
     end
 
     private
@@ -32,6 +36,7 @@ module EstimatorAi
       @json_conn ||= Faraday.new(url: @base_url) do |f|
         f.request  :json
         f.response :json
+        f.headers.update(@default_headers)
         f.options.timeout = @timeout
         f.adapter Faraday.default_adapter
       end

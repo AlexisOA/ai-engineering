@@ -18,12 +18,15 @@ from app.generation.rag.schemas import (
     RetrievalResult,
     RetrievedChunk,
     SourceCitation,
+    TaskItem,
+    WorkModule,
 )
 
 _SETTINGS = SimpleNamespace(
     REFORMULATION_MODEL="gpt-5-mini",
     GENERATION_MODEL="gpt-5",
-    GENERATION_REASONING_EFFORT="medium",
+    GENERATION_REASONING_EFFORT="high",
+    GENERATION_MAX_TOKENS=64_000,
     RETRIEVAL_TOP_K=10,
     RETRIEVAL_DISTANCE_THRESHOLD=0.6,
     MAX_CONTEXT_TOKENS=100_000,
@@ -61,7 +64,12 @@ def _good_estimate() -> Estimate:
     return Estimate(
         total_engineer_days=18,
         duration_weeks=4,
-        cost_breakdown=[],
+        modules=[
+            WorkModule(
+                name="Checkout",
+                tasks=[TaskItem(name="Cart & payment flow", engineer_days=18, sources=[1])],
+            )
+        ],
         sources=[SourceCitation(source_id=1, relevance="primary", used_for="checkout")],
         assumptions=[],
         confidence="high",
@@ -125,6 +133,30 @@ async def test_soft_fail_skips_generation(wire):
     assert result.total_engineer_days is None
     assert result.insufficient_context_explanation
     assert calls["generate"] == 0  # generator never called on soft-fail
+
+
+async def test_generate_estimate_passes_reasoning_token_budget(monkeypatch):
+    """gpt-5 reasoning tokens count against max_tokens; _generate must pass the
+    configured ceiling (and the reasoning effort) to the wrapper, or the call
+    truncates with finish_reason='length'."""
+    captured: dict = {}
+
+    def fake_complete_structured(**kwargs):
+        captured.update(kwargs)
+        return _good_estimate(), {}
+
+    wrapper = SimpleNamespace(complete_structured=fake_complete_structured)
+    monkeypatch.setattr(orch, "get_settings", lambda: _SETTINGS)
+    monkeypatch.setattr(deps, "get_llm_wrapper", lambda: wrapper)
+
+    estimate = await orch.generate_estimate(
+        '<source id="1">x</source>', EstimationQuery(function="ecommerce storefront")
+    )
+
+    assert estimate.confidence == "high"
+    assert captured["max_tokens"] == _SETTINGS.GENERATION_MAX_TOKENS
+    assert captured["reasoning_effort"] == "high"
+    assert captured["model_override"] == "gpt-5"
 
 
 async def test_idempotency_hit_short_circuits_pipeline(wire):

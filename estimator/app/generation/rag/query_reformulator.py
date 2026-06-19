@@ -70,6 +70,10 @@ async def reformulate_query(transcript: str) -> EstimationQuery:
             user_message=transcript,
             response_model=EstimationQuery,
             model_override=settings.REFORMULATION_MODEL,
+            # gpt-5-mini is also a reasoning model: give the same generous token
+            # ceiling so reasoning tokens never starve the structured output on a
+            # long/ambiguous transcript (the 4000 wrapper default would truncate).
+            max_tokens=settings.GENERATION_MAX_TOKENS,
         )
         return query
     except Exception as exc:  # noqa: BLE001 — degrade to a simpler rewrite.

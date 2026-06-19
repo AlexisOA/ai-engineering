@@ -13,6 +13,7 @@ from app.api import config as config_api
 from app.api import estimations, ingestion, sessions
 from app.api.rate_limiting import limiter, rate_limit_exceeded_handler
 from app.api.routers.estimate import router as estimate_router
+from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.retrieval import router as retrieval_router
 
 
@@ -115,6 +116,8 @@ app.include_router(config_api.router)
 # Session 9 — RAG retrieval + grounded estimation (each independently secured).
 app.include_router(retrieval_router)
 app.include_router(estimate_router)
+# Per-stage endpoints exposing each pipeline step (wizard / live-session aid).
+app.include_router(estimate_stages_router)
 
 
 @app.get("/health")

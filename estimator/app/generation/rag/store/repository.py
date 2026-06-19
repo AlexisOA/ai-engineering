@@ -37,9 +37,13 @@ class ChunkStore:
         document_type: str,
         doc_metadata: dict,
         embedded_chunks: list[EmbeddedChunk],
+        chunk_type: str = BUDGET_COMPONENT,
     ) -> int:
         """Insert the document row plus all its chunk rows. No commit here —
-        the caller's transaction decides when (and whether) anything lands."""
+        the caller's transaction decides when (and whether) anything lands.
+
+        ``chunk_type`` is stamped on every chunk (filterable column); it
+        defaults to ``budget_component`` so existing callers are unaffected."""
         document = DocumentRow(
             source_path=source_path,
             document_type=document_type,
@@ -51,7 +55,7 @@ class ChunkStore:
         session.add_all(
             ChunkRow(
                 document_id=document.id,
-                chunk_type=BUDGET_COMPONENT,
+                chunk_type=chunk_type,
                 content=chunk.text,
                 embedding=chunk.embedding,
                 metadata_=chunk.metadata,

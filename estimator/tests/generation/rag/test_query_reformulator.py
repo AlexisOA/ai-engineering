@@ -15,7 +15,9 @@ from app.generation.rag.schemas import EstimationQuery
 @pytest.fixture(autouse=True)
 def fake_settings(monkeypatch):
     monkeypatch.setattr(
-        qr, "get_settings", lambda: SimpleNamespace(REFORMULATION_MODEL="gpt-5-mini")
+        qr,
+        "get_settings",
+        lambda: SimpleNamespace(REFORMULATION_MODEL="gpt-5-mini", GENERATION_MAX_TOKENS=32_000),
     )
 
 

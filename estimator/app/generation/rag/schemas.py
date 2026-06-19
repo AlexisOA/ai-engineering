@@ -32,6 +32,10 @@ class BudgetComponent(BaseModel):
     component_id: str = Field(description="Stable id within the budget, e.g. 'AUTH-001'.")
     name: str = Field(description="Short human-readable component name.")
     description: str = Field(description="Detailed description of the work.")
+    module: str | None = Field(
+        default=None,
+        description="Functional block this component/task belongs to (e.g. 'Payments').",
+    )
     tech_stack: list[str] = Field(
         default_factory=list, description="Technologies involved in this component."
     )
@@ -90,6 +94,12 @@ class IngestRequest(BaseModel):
         min_length=1, max_length=50, description="Document family, e.g. 'historical_budget'."
     )
     content: Budget = Field(description="Full budget JSON, as produced upstream.")
+    chunk_type: str = Field(
+        default="budget_component",
+        max_length=50,
+        description="chunk_type stamped on every chunk (filterable). Defaults keep S08 behaviour; "
+        "the task corpus uses 'historical_task'.",
+    )
 
 
 class IngestResponse(BaseModel):
@@ -207,27 +217,48 @@ class Assumption(BaseModel):
     rationale: str
 
 
-class CostComponent(BaseModel):
-    """One line of the cost breakdown, in engineer-days."""
+class TaskItem(BaseModel):
+    """One concrete engineering task inside a functional module, in engineer-days.
+
+    ``sources`` cite the historical chunk(s) the task was derived from; a task
+    with no historical analog is left uncited and should surface as an
+    :class:`Assumption` instead.
+    """
 
     name: str
+    description: str | None = Field(
+        default=None, description="One-line scope of the task."
+    )
     engineer_days: int = Field(ge=0)
     sources: list[int] = Field(
-        default_factory=list, description="Chunk ids that back this component."
+        default_factory=list, description="Chunk ids that back this task."
     )
+
+
+class WorkModule(BaseModel):
+    """A functional block (e.g. Auth, Payments, Data, Frontend, Infra, QA, PM)
+    grouping the concrete tasks needed to deliver it."""
+
+    name: str
+    description: str | None = Field(
+        default=None, description="What this functional block covers."
+    )
+    tasks: list[TaskItem] = Field(default_factory=list)
 
 
 class Estimate(BaseModel):
     """Grounded estimate produced from retrieved historical budgets.
 
     Hours-based (engineer-days) with mandatory citations — distinct from the
-    Session 4 ``EstimationResult`` (euros/weeks/phases). When the retrieved
-    context is insufficient, ``confidence='insufficient'`` and the numeric
-    totals stay ``None`` (enforced by :func:`validation.check_coherence`).
+    Session 4 ``EstimationResult`` (euros/weeks/phases). The breakdown is
+    organised into functional modules, each decomposed into concrete tasks.
+    When the retrieved context is insufficient, ``confidence='insufficient'``
+    and the numeric totals stay ``None`` with ``modules`` empty (enforced by
+    :func:`validation.check_coherence`).
     """
 
     total_engineer_days: int | None = None
-    cost_breakdown: list[CostComponent] = Field(default_factory=list)
+    modules: list[WorkModule] = Field(default_factory=list)
     duration_weeks: int | None = None
     sources: list[SourceCitation] = Field(default_factory=list)
     assumptions: list[Assumption] = Field(default_factory=list)
@@ -258,3 +289,70 @@ class EstimateRequest(BaseModel):
 
     transcript: str = Field(min_length=100, max_length=50_000)
     idempotency_key: str | None = Field(default=None, max_length=128)
+
+
+# ---- Per-stage request/response models for the wizard (S09 teaching aid) ---
+# The full pipeline (``estimate_from_transcript``) hides its intermediate
+# artifacts; these stateless stage endpoints expose each step so a UI can run
+# the pipeline one stage at a time. They REUSE the pure functions in this
+# package — they do not re-implement any pipeline logic. Retrieval reuses
+# ``RetrievalRequest``/``RetrievalResult`` above (zero new schema).
+
+
+class ReformulateRequest(BaseModel):
+    """Payload for ``POST /v1/estimate/stages/reformulate``."""
+
+    transcript: str = Field(min_length=100, max_length=50_000)
+
+
+class ReformulationResult(BaseModel):
+    """Output of the query-understanding stage: the structured brief plus the
+    canonical search text that gets embedded for retrieval."""
+
+    query: EstimationQuery
+    search_text: str = Field(description="Corpus-aligned text fed to the embedder.")
+
+
+class AssembleRequest(BaseModel):
+    """Payload for ``POST /v1/estimate/stages/assemble``.
+
+    ``max_context_tokens`` defaults (server-side) to ``MAX_CONTEXT_TOKENS`` when
+    omitted; a small value lets a demo show whole-chunk truncation."""
+
+    chunks: list[RetrievedChunk]
+    max_context_tokens: int | None = Field(default=None, ge=256, le=64_000)
+
+
+class AssembleResult(BaseModel):
+    """Output of the augmentation stage: the assembled ``<source>`` block plus
+    what survived the token budget."""
+
+    context_block: str
+    kept_chunks: list[RetrievedChunk]
+    dropped_count: int = Field(ge=0, description="Chunks dropped by the token budget.")
+    token_count: int = Field(ge=0, description="Tokens in the assembled context block.")
+
+
+class GenerateRequest(BaseModel):
+    """Payload for ``POST /v1/estimate/stages/generate``.
+
+    ``kept_chunks`` are the chunks the context block was built from; they are
+    used to validate citations (no fabricated source ids) after generation."""
+
+    context_block: str = Field(min_length=1)
+    query: EstimationQuery
+    kept_chunks: list[RetrievedChunk] = Field(default_factory=list)
+
+
+class GenerateResult(BaseModel):
+    """Output of the generation stage: the estimate plus the grounding signals
+    the wizard surfaces (instead of auto-retrying like the full pipeline)."""
+
+    estimate: Estimate
+    fabricated_source_ids: list[int] = Field(
+        default_factory=list,
+        description="Cited source ids not present in kept_chunks (empty = clean).",
+    )
+    coherent: bool = Field(
+        description="False when an insufficient estimate still carries numbers."
+    )

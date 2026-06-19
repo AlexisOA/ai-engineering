@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from app.generation.rag.schemas import (
-    CostComponent,
     Estimate,
     RetrievedChunk,
     SourceCitation,
+    TaskItem,
+    WorkModule,
 )
 from app.generation.rag.validation import check_coherence, validate_citations
 
@@ -28,7 +29,12 @@ def _estimate(
     return Estimate(
         total_engineer_days=20,
         duration_weeks=4,
-        cost_breakdown=[CostComponent(name="Auth", engineer_days=20, sources=component_sources)],
+        modules=[
+            WorkModule(
+                name="Authentication",
+                tasks=[TaskItem(name="Auth", engineer_days=20, sources=component_sources)],
+            )
+        ],
         sources=[
             SourceCitation(source_id=sid, relevance="primary", used_for="auth")
             for sid in source_ids

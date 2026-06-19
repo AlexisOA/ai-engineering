@@ -21,8 +21,8 @@ def validate_citations(
 ) -> list[int]:
     """Return the cited source ids that were never retrieved (fabricated).
 
-    Checks both the top-level ``sources`` citations and the per-component
-    ``cost_breakdown[].sources``. An empty list means every citation is valid
+    Checks both the top-level ``sources`` citations and the per-task
+    ``modules[].tasks[].sources``. An empty list means every citation is valid
     (including the edge case of an estimate that cites nothing at all).
 
     Parameters
@@ -40,8 +40,9 @@ def validate_citations(
     valid_ids = {chunk.id for chunk in retrieved_chunks}
 
     cited_ids: set[int] = {citation.source_id for citation in estimate.sources}
-    for component in estimate.cost_breakdown:
-        cited_ids.update(component.sources)
+    for module in estimate.modules:
+        for task in module.tasks:
+            cited_ids.update(task.sources)
 
     return sorted(cited_ids - valid_ids)
 
@@ -49,15 +50,16 @@ def validate_citations(
 def check_coherence(estimate: Estimate) -> bool:
     """Return whether the estimate's confidence level matches its content.
 
-    When ``confidence == "insufficient"``: both numeric totals must be ``None``
-    and ``insufficient_context_explanation`` must be non-empty. Any other
-    confidence level is always considered coherent here (the numeric checks
-    belong to the schema/business rules, not to this guard).
+    When ``confidence == "insufficient"``: both numeric totals must be ``None``,
+    ``modules`` must be empty, and ``insufficient_context_explanation`` must be
+    non-empty. Any other confidence level is always considered coherent here
+    (the numeric checks belong to the schema/business rules, not to this guard).
     """
     if estimate.confidence != "insufficient":
         return True
     return (
         estimate.total_engineer_days is None
         and estimate.duration_weeks is None
+        and not estimate.modules
         and bool(estimate.insufficient_context_explanation)
     )
