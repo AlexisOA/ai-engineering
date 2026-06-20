@@ -187,6 +187,7 @@ class LLMWrapper:
         system_prompt: str,
         user_message: str,
         response_model: type[T],
+        history: list[dict] | None = None,
         model_override: str | None = None,
         max_tokens: int = 4000,
         max_retries: int = 6,
@@ -197,12 +198,18 @@ class LLMWrapper:
         re-prompts the LLM up to ``max_retries`` times when a Pydantic validator
         raises, feeding the ``ValueError`` message back to the model.
 
+        ``history`` is an optional list of prior-turn messages
+        (``[{"role": "user", ...}, {"role": "assistant", ...}, ...]``) that is
+        inserted between the system message and the current user message,
+        giving the model conversational context.
+
         Streaming bypasses are not relevant here — the entire model is built
         atomically by Instructor before this function returns.
         """
         target_model = model_override or self.primary_model
         messages = [
             {"role": "system", "content": system_prompt},
+            *(history or []),
             {"role": "user", "content": user_message},
         ]
 

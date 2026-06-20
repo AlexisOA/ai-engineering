@@ -1,0 +1,12 @@
+<project_description>
+{{ description }}
+</project_description>
+
+Project type: {{ project_type }}.
+Estimate this project following the rules above, integrating the project_metadata context and the conversation history.
+
+ARITHMETIC REMINDER — follow this order strictly:
+1. Decide every phase (name, duration_weeks, cost_eur, summary).
+2. Set total_cost_eur = exact sum of every phase.cost_eur. Do NOT pick a round total first.
+3. Set total_duration_weeks = sum of every phase.duration_weeks.
+4. Verify both sums before returning.

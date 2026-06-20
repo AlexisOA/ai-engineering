@@ -11,6 +11,7 @@ from openai import OpenAI
 from app.cache.semantic import EstimationSemanticCache
 from app.config import get_settings
 from app.services.cache import EstimationCache
+from app.services.conversation import ConversationService
 from app.services.estimation import EstimationService
 from app.services.llm_wrapper import LLMWrapper
 
@@ -90,5 +91,13 @@ def get_estimation_service() -> EstimationService:
         llm_wrapper=get_llm_wrapper(),
         exact_cache=get_cache(),
         semantic_cache=get_semantic_cache(),
+        openai_client=get_openai_client(),
+    )
+
+
+@lru_cache
+def get_conversation_service() -> ConversationService:
+    return ConversationService(
+        llm_wrapper=get_llm_wrapper(),
         openai_client=get_openai_client(),
     )
