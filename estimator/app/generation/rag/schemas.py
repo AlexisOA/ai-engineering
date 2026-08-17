@@ -76,22 +76,36 @@ class EmbeddedChunk(Chunk):
 
 
 class IngestRequest(BaseModel):
-    """Payload for ``POST /embeddings/ingest``."""
+    """Payload for ``POST /embeddings/ingest`` (Session 8: persists, doesn't return vectors)."""
 
-    budgets: list[Budget] = Field(min_length=1, description="Budgets to chunk and embed.")
-
-
-class IngestStats(BaseModel):
-    """Aggregate counters returned with an ingest response."""
-
-    total_budgets: int = Field(ge=0)
-    total_chunks: int = Field(ge=0)
-    total_tokens: int = Field(ge=0)
-    estimated_cost_usd: float = Field(ge=0.0)
+    source_path: str
+    document_type: str
+    content: Budget
 
 
 class IngestResponse(BaseModel):
-    """Response for ``POST /embeddings/ingest``."""
+    document_id: int
+    chunks_created: int
+    embedding_dimension: int
+    ingestion_time_ms: int
 
-    chunks: list[EmbeddedChunk]
-    stats: IngestStats
+
+class SearchRequest(BaseModel):
+    query: str
+    k: int = Field(default=5, ge=1, le=50)
+
+
+class SearchResultItem(BaseModel):
+    chunk_id: int
+    document_id: int
+    chunk_type: str
+    content: str
+    distance: float
+    metadata: dict
+
+
+class SearchResponse(BaseModel):
+    query: str
+    k: int
+    search_time_ms: int
+    results: list[SearchResultItem]

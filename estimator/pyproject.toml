@@ -44,6 +44,9 @@ dependencies = [
     "spacy>=3.7",
     "faker>=24.0",
     "unstructured[all-docs]>=0.14",
+    # Session 8 — pgvector persistence
+    "asyncpg>=0.29",
+    "pgvector>=0.3",
 ]
 
 [dependency-groups]

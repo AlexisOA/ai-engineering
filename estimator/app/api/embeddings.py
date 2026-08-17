@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import ALL_STRATEGIES, build_chunkers, get_chunker, get_embedder
 from app.generation.rag.chunking.structural import JSONStructuralChunker
@@ -16,8 +18,10 @@ from app.generation.rag.analysis.comparison import (
     CompareRequest,
     CompareResponse,
 )
-from app.generation.rag.embedding.embedder import OpenAIEmbedder, estimated_cost_usd
-from app.generation.rag.schemas import IngestRequest, IngestResponse, IngestStats
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.generation.rag.ingest_service import DuplicateDocumentError, ingest_document
+from app.generation.rag.schemas import IngestRequest, IngestResponse
+from app.generation.rag.store.db import get_db_session
 
 log = structlog.get_logger()
 
@@ -25,26 +29,31 @@ router = APIRouter(prefix="/embeddings", tags=["embeddings"])
 
 
 @router.post("/ingest", response_model=IngestResponse)
-def ingest(
+async def ingest(
     request: IngestRequest,
     chunker: JSONStructuralChunker = Depends(get_chunker),
     embedder: OpenAIEmbedder | None = Depends(get_embedder),
+    session: AsyncSession = Depends(get_db_session),
 ) -> IngestResponse:
-    """Chunk the budgets, embed every chunk, and return vectors + stats."""
+    """Chunk the document, embed every chunk, and persist document + chunks."""
     if embedder is None:
-        # No OPENAI_API_KEY configured. Generic message to the client, detail logged.
         log.error("embeddings_ingest_failed", reason="embedder_unavailable")
         raise HTTPException(status_code=500, detail="Embedding service is not available.")
 
-    chunks = chunker.chunk(request.budgets)
-    log.info(
-        "embeddings_ingest_received",
-        total_budgets=len(request.budgets),
-        total_chunks=len(chunks),
-    )
-
     try:
-        embedded = embedder.embed_many(chunks)
+        response = await ingest_document(
+            session,
+            chunker=chunker,
+            embedder=embedder,
+            source_path=request.source_path,
+            document_type=request.document_type,
+            content=request.content,
+        )
+    except DuplicateDocumentError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Document already ingested", "document_id": exc.document_id},
+        )
     except Exception as exc:  # noqa: BLE001 — any embedding-API failure becomes a 500.
         log.error(
             "embeddings_ingest_failed",
@@ -54,15 +63,8 @@ def ingest(
         )
         raise HTTPException(status_code=500, detail="Failed to generate embeddings.") from exc
 
-    total_tokens = sum(chunk.token_count for chunk in embedded)
-    stats = IngestStats(
-        total_budgets=len(request.budgets),
-        total_chunks=len(embedded),
-        total_tokens=total_tokens,
-        estimated_cost_usd=estimated_cost_usd(total_tokens),
-    )
-    log.info("embeddings_ingest_done", **stats.model_dump())
-    return IngestResponse(chunks=embedded, stats=stats)
+    log.info("embeddings_ingest_done", **response.model_dump())
+    return response
 
 
 @router.post("/compare", response_model=CompareResponse)

@@ -322,6 +322,50 @@ Las estrategias `semantic`, `propositional` y `contextual_retrieval` llaman a AP
 - **Fuera de scope** → **Sesión 08**: persistencia vectorial (pgvector), búsqueda semántica / retrieval real y métricas formales de retrieval (recall@k, NDCG).
 - El guion del directo está en `guides/session-7-live-guide.md` (git-ignored, material de instructor).
 
+## Sesión 8 — Persistencia con pgvector + búsqueda
+
+El pipeline de embeddings de la Sesión 7 ahora persiste en Postgres en vez de devolver los vectores por HTTP. El servicio `estimator-postgres` (imagen `pgvector/pgvector:pg16`) ya estaba en `docker-compose.yml` desde la Sesión 6/7; la migración `0002_session8_pgvector` activa la extensión `vector` y crea `documents` + `chunks`.
+
+```bash
+docker compose up estimator-postgres
+docker compose exec estimator-postgres psql -U estimator -d estimator -c "SELECT version();"
+
+docker compose run --rm estimator alembic upgrade head
+```
+
+### Endpoints
+
+```
+POST /embeddings/ingest
+  {"source_path": "...", "document_type": "historical_budget", "content": {...budget...}}
+  → 200 {"document_id", "chunks_created", "embedding_dimension", "ingestion_time_ms"}
+  → 409 {"detail": "Document already ingested", "document_id"}   (source_path repetido)
+
+POST /search
+  {"query": "...", "k": 5}
+  → 200 {"query", "k", "search_time_ms", "results": [{chunk_id, document_id, chunk_type, content, distance, metadata}]}
+```
+
+Script de validación:
+
+```bash
+docker compose run --rm estimator python scripts/query_examples.py
+# fuera del contenedor:
+uv run python scripts/query_examples.py
+```
+
+Output real contra el corpus de ejemplo en [`output_examples.txt`](output_examples.txt).
+
+### Decisiones de schema
+
+**Dos tablas, no una.** Un presupuesto genera varios chunks; meter la metadata del documento repetida en cada fila de chunk rompe la integridad referencial y duplica datos sin necesidad. Con `documents` + `chunks` y `ON DELETE CASCADE`, borrar un documento borra sus chunks solo.
+
+**`metadata` como JSONB.** Lo estable (tipo de documento, tipo de chunk, fechas) va en columnas tipadas. Lo variable —lo que el chunker puede añadir sin que cambie el schema— va en JSONB, con un índice GIN encima para poder filtrar por claves sueltas sin migrar cada vez que se añade un campo nuevo.
+
+**`cosine_distance`, no L2 ni inner product.** Los embeddings de `text-embedding-3-small` vienen normalizados, así que cosine e inner product dan lo mismo en la práctica; se elige coseno porque es la convención más extendida en RAG y porque cuando el directo añada el índice HNSW con `vector_cosine_ops`, el operador de la query y la operator class del índice tienen que coincidir — si no, Postgres ignora el índice sin avisar y cae a sequential scan.
+
+**Sin índice vectorial todavía.** Deliberado. Con el volumen de este corpus (~15 documentos, ~50 chunks) el sequential scan resuelve en un puñado de cientos de ms — no hace falta, y el directo lo añade para medir el antes/después.
+
 ---
 
 > Este proyecto forma parte del **Master en AI Engineering** y es la base sobre la que se construye en directo el resto de la Sesión 04 (output estructurado, guardrails, cache semántico) y de la Sesión 05 (compresión avanzada de memoria con anclas, tier dinámico, patrón Actor-Critic-Boss).

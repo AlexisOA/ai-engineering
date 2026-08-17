@@ -1,0 +1,40 @@
+Query: REST API development with JWT authentication for financial sector
+search_time_ms: 409
+  chunk_id=1     distance=0.4108 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=2     distance=0.4760 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=3     distance=0.4982 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=4     distance=0.5122 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=9     distance=0.5258 type=budget_component   [Project: Real-time payments gateway with fraud detection and reconciliation] [Client sector: finance | Year: 2023 | Mai
+
+Query: secure backend service with token-based access control for banking applications
+search_time_ms: 249
+  chunk_id=1     distance=0.4075 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=2     distance=0.4556 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=3     distance=0.4774 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=4     distance=0.5353 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+  chunk_id=9     distance=0.5364 type=budget_component   [Project: Real-time payments gateway with fraud detection and reconciliation] [Client sector: finance | Year: 2023 | Mai
+
+Query: mobile application for restaurant reservations
+search_time_ms: 256
+  chunk_id=24    distance=0.5690 type=budget_component   [Project: Grocery delivery app with slot booking and route optimization] [Client sector: ecommerce | Year: 2024 | Main t
+  chunk_id=31    distance=0.5810 type=budget_component   [Project: Patient appointment and telemedicine platform with HL7/FHIR integration] [Client sector: healthcare | Year: 20
+  chunk_id=26    distance=0.5862 type=budget_component   [Project: Grocery delivery app with slot booking and route optimization] [Client sector: ecommerce | Year: 2024 | Main t
+  chunk_id=25    distance=0.6048 type=budget_component   [Project: Grocery delivery app with slot booking and route optimization] [Client sector: ecommerce | Year: 2024 | Main t
+  chunk_id=4     distance=0.6514 type=budget_component   [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | M
+
+Query: integration with external system
+search_time_ms: 208
+  chunk_id=45    distance=0.5980 type=budget_component   [Project: Factory IoT telemetry and predictive maintenance system] [Client sector: industrial | Year: 2024 | Main tech: 
+  chunk_id=37    distance=0.5982 type=budget_component   [Project: Pharmacy inventory and prescription fulfillment system] [Client sector: healthcare | Year: 2023 | Main tech: j
+  chunk_id=54    distance=0.6021 type=budget_component   [Project: Decomposition of a monolithic core banking platform into domain services] [Client sector: finance | Year: 2024
+  chunk_id=11    distance=0.6030 type=budget_component   [Project: Real-time payments gateway with fraud detection and reconciliation] [Client sector: finance | Year: 2023 | Mai
+  chunk_id=50    distance=0.6151 type=budget_component   [Project: Energy grid monitoring and demand-response platform] [Client sector: industrial | Year: 2024 | Main tech: java
+
+Query: migration from monolith to microservices architecture using Kubernetes
+search_time_ms: 234
+  chunk_id=54    distance=0.5617 type=budget_component   [Project: Decomposition of a monolithic core banking platform into domain services] [Client sector: finance | Year: 2024
+  chunk_id=53    distance=0.6221 type=budget_component   [Project: Decomposition of a monolithic core banking platform into domain services] [Client sector: finance | Year: 2024
+  chunk_id=50    distance=0.6678 type=budget_component   [Project: Energy grid monitoring and demand-response platform] [Client sector: industrial | Year: 2024 | Main tech: java
+  chunk_id=48    distance=0.6820 type=budget_component   [Project: Warehouse management system with automated guided vehicle coordination] [Client sector: industrial | Year: 202
+  chunk_id=34    distance=0.6888 type=budget_component   [Project: Remote patient monitoring with wearable data ingestion and alerts] [Client sector: healthcare | Year: 2024 | M
+
