@@ -9,7 +9,7 @@ everything back and leaves no orphan ``documents`` row.
 from __future__ import annotations
 
 from pgvector.sqlalchemy import HALFVEC
-from sqlalchemy import Integer, Row, cast, func, select
+from sqlalchemy import Integer, Row, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.rag.schemas import EmbeddedChunk
@@ -92,6 +92,28 @@ class ChunkStore:
             .limit(k)
         )
         return list((await session.execute(stmt)).all())
+
+    async def search_lexical(
+        self, session: AsyncSession, *, query: str, k: int
+    ) -> list[Row]:
+        """Full-text search over ``content_tsv`` (Session 10), ranked by ``ts_rank_cd``.
+
+        Raw SQL rather than the ORM: ``content_tsv`` is a DB-generated column
+        (see migration 0003) that the app never writes to, so there is no need
+        to map it as an ORM attribute — it only has to be readable in a query.
+        """
+        stmt = text(
+            """
+            SELECT id, document_id, chunk_type, content, metadata,
+                   ts_rank_cd(content_tsv, plainto_tsquery('spanish', :query)) AS rank
+            FROM chunks
+            WHERE content_tsv @@ plainto_tsquery('spanish', :query)
+            ORDER BY rank DESC
+            LIMIT :k
+            """
+        )
+        rows = (await session.execute(stmt, {"query": query, "k": k})).all()
+        return rows
 
     async def search_filtered(
         self,

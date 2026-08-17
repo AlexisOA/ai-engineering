@@ -130,6 +130,10 @@ class Settings(BaseSettings):
     # every request) — set them in .env to enable the endpoints.
     RETRIEVAL_API_KEY: str | None = None
     ESTIMATE_API_KEY: str | None = None
+    # Session 10 — hybrid search + reranking.
+    RERANKER_MODEL: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    RETRIEVAL_RECALL_K: int = 50
+    RRF_K: int = 60
 
     @model_validator(mode="after")
     def validate_at_least_one_api_key(self) -> "Settings":

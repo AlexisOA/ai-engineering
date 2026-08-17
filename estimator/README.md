@@ -406,6 +406,32 @@ El tuning de Postgres para builds de índices vive en `docker-compose.yml` (serv
 1. Repositorio actualizado: índice halfvec activo, flags de tuning en compose, queries de monitorización en el README.
 2. Documento corto con los números observados en **vuestro** barrido de `ef_search` (tabla del script) y la decisión razonada del valor adoptado: qué recall ganáis y qué latencia pagáis frente a las alternativas.
 
+## Sesión 10 — búsqueda híbrida + reranking
+
+`app/generation/rag/retrieval/` añade dos cosas sobre el retrieval existente:
+
+- **Híbrida**: columna generada `content_tsv` (migración `0003_session10_fulltext`, config `english`
+  porque el corpus real está en inglés pese a que el enunciado asume español — comprobado
+  directamente contra las filas) + `ChunkStore.search_lexical`, fusionada con la búsqueda vectorial
+  vía Reciprocal Rank Fusion (`retrieval/fusion.py`).
+- **Reranking**: `retrieval/reranker.py` envuelve un cross-encoder (`sentence-transformers`,
+  `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`), activable/desactivable por flag. Patrón
+  recall-then-rerank: recall ancho (`recall_k=50`) → rerank → top-5 final.
+
+`retrieval/pipeline.py::RetrievalPipeline.retrieve(query, mode, rerank, recall_k, final_k)` combina
+ambos ejes; las cuatro configuraciones del ejercicio (A/B/C/D) son solo los cuatro valores de
+`(mode, rerank)`.
+
+```bash
+# Verificar que el modelo de reranking carga
+docker compose exec estimator python -m app.generation.rag.retrieval.verify_reranker
+
+# Correr el golden set (5 queries anotadas a mano) contra las 4 configuraciones
+uv run python scripts/eval_retrieval_s10.py
+```
+
+Resultados reales y conclusiones: [`evals/RETRIEVAL_REPORT.md`](evals/RETRIEVAL_REPORT.md).
+
 ---
 
 > Este proyecto forma parte del **Master en AI Engineering** y es la base sobre la que se construye en directo el resto de la Sesión 04 (output estructurado, guardrails, cache semántico) y de la Sesión 05 (compresión avanzada de memoria con anclas, tier dinámico, patrón Actor-Critic-Boss).
