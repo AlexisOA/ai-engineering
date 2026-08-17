@@ -34,6 +34,8 @@ dependencies = [
     # Session 8 — pgvector persistence (async driver + vector type for SQLAlchemy)
     "asyncpg>=0.29",
     "pgvector>=0.3",
+    # Session 10 — cross-encoder reranking (recall-then-rerank). Pulls torch.
+    "sentence-transformers>=3.0",
     # Session 9 — RAG API hardening (per-API-key rate limiting)
     "slowapi>=0.1.9",
     # Session 6 — data-driven AI

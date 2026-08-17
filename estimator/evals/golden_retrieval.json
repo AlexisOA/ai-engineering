@@ -1,0 +1,27 @@
+[
+  {
+    "id": "q1_mobile_banking",
+    "query": "Mobile banking application with OAuth authentication and European payment regulation compliance",
+    "relevant_budget_ids": ["BUD-2024-001"]
+  },
+  {
+    "id": "q2_marketplace",
+    "query": "Multi-vendor e-commerce marketplace with payouts to vendors and dispute resolution between buyers and sellers",
+    "relevant_budget_ids": ["BUD-2024-006"]
+  },
+  {
+    "id": "q3_telemedicine",
+    "query": "Telemedicine and remote patient monitoring platform ingesting wearable device data for a hospital",
+    "relevant_budget_ids": ["BUD-2024-009", "BUD-2024-010"]
+  },
+  {
+    "id": "q4_factory_iot",
+    "query": "IoT sensors on factory equipment feeding predictive maintenance alerts to avoid unplanned downtime",
+    "relevant_budget_ids": ["BUD-2024-013"]
+  },
+  {
+    "id": "q5_mvp_store",
+    "query": "Bare-bones online store MVP with a basic catalog and checkout, launched fast and cheap",
+    "relevant_budget_ids": ["BUD-2024-017"]
+  }
+]
