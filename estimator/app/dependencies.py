@@ -10,6 +10,7 @@ from openai import OpenAI
 
 from app.cache.semantic import EstimationSemanticCache
 from app.config import get_settings
+from app.embedding_pipeline.embedder import OpenAIEmbedder
 from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import ParserRegistry, default_registry
@@ -86,6 +87,22 @@ def get_semantic_cache() -> EstimationSemanticCache | None:
             error=str(exc)[:200],
         )
         return None
+
+
+@lru_cache
+def get_embedder() -> OpenAIEmbedder:
+    """Singleton embedder for the Session 7 embedding pipeline.
+
+    Raises rather than degrading gracefully: unlike the semantic cache (an
+    optional layer), the embedding pipeline's whole reason to exist is
+    producing vectors — running without a key isn't a smaller version of the
+    feature, it's a broken one.
+    """
+    settings = get_settings()
+    client = get_openai_client()
+    if client is None:
+        raise RuntimeError("OPENAI_API_KEY is required for the embedding pipeline")
+    return OpenAIEmbedder(client=client, model=settings.EMBEDDING_MODEL)
 
 
 @lru_cache

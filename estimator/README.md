@@ -204,6 +204,59 @@ Los tres tests son de integración con `TestClient`, un `FakeLLMWrapper` que cap
 
 El cliente Rails (`estimator-web/`) se adaptó al flujo conversacional con un nuevo controller `ChatSessionsController` (rutas `/chat_sessions`, root re-apuntado aquí), un panel lateral con el `ProjectMetadata` actual, multipart vía `faraday-multipart` y un botón "Nueva conversación" que destruye el mirror local y arranca una sesión limpia. El endpoint transaccional `EstimationsController` se mantiene operativo para la demo histórica.
 
+## Sesión 7 — Pipeline mínimo de embeddings y chunking
+
+Nuevo módulo `app/embedding_pipeline/`: convierte presupuestos históricos (JSON normalizado) en chunks embebibles y sus vectores, todo en memoria — sin persistencia todavía (eso entra en la Sesión 08 con pgvector) y sin retrieval (búsqueda semántica es tema del directo).
+
+### Estrategia de chunking
+
+Un componente de presupuesto (`BudgetComponent`) = un chunk. Sin overlap ni fixed-size splitting: se confía en la estructura del JSON. Cada chunk antepone el contexto del presupuesto padre (proyecto, sector, año, stack principal) al detalle del componente — un *contextual chunk header* deliberado: sin él, un componente como "Authentication backend" perdería la pista de a qué cliente pertenece.
+
+### Endpoint
+
+```
+POST /embeddings/ingest
+  body: {"budgets": [<Budget>, ...]}
+  → 200 {"chunks": [<EmbeddedChunk>, ...], "stats": {total_budgets, total_chunks, total_tokens, estimated_cost_usd}}
+```
+
+Con el sample de datos incluido (`data/budgets_sample.json`, 15 presupuestos):
+
+```bash
+http POST :8000/embeddings/ingest budgets:="$(cat data/budgets_sample.json)"
+```
+
+O directamente desde `/docs` (Swagger UI), pegando el contenido de `data/budgets_sample.json` en el body de `POST /embeddings/ingest`.
+
+### Script `compare.py` — sanity check de similitud
+
+Calcula la similitud coseno (a mano, sin numpy) entre dos textos embebidos con `text-embedding-3-small`.
+
+Dentro del contenedor:
+
+```bash
+docker compose exec estimator python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+Fuera del contenedor (con `.env` cargado y `uv sync` hecho):
+
+```bash
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+Los resultados de las tres parejas de validación del enunciado, con comentario, están en [`app/embedding_pipeline/SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
+
+### Decisiones de diseño
+
+1. **`tiktoken.encoding_for_model("text-embedding-3-small")` para `token_count`.** Se calcula en el chunker, no en el embedder — así un chunk anormalmente grande es visible antes de gastar una llamada a la API.
+2. **Batching de 100 chunks por llamada** a `embeddings.create`, con reintento exponencial simple (1s/2s/4s) solo ante `RateLimitError`; cualquier otro error de la API se propaga tal cual.
+3. **`get_embedder()` lanza si falta `OPENAI_API_KEY`** (a diferencia del cache semántico, que degrada a `None`): sin API key este módulo no tiene una versión "más pequeña" que ofrecer, simplemente no funciona.
+4. **`data/budgets_sample.json`** son 15 presupuestos sintéticos que siguen el esquema del enunciado (`client_metadata`, `components[]` con `tech_stack`/`complexity`/`dependencies`) — no confundir con `data/seed/budgets/` (Sesión 06), que usa el esquema antiguo (`phases`, `total_amount`) para el pipeline de ingestión de documentos.
+
 ---
 
 > Este proyecto forma parte del **Master en AI Engineering** y es la base sobre la que se construye en directo el resto de la Sesión 04 (output estructurado, guardrails, cache semántico) y de la Sesión 05 (compresión avanzada de memoria con anclas, tier dinámico, patrón Actor-Critic-Boss).
