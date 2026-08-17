@@ -103,13 +103,15 @@ async def _resolve_session_and_enrich(
 ) -> tuple[Session, str, int]:
     """Shared prelude for both /estimate and /estimate-acb.
 
-    Returns ``(session, enriched_transcript, attachments_total_chars)``. The
-    third element is the sum of raw extracted text across all attachments
-    (excluding the ``--- attachment: ... ---`` fences added by
-    ``enrich_transcript``); the stress runner uses it to feed the
-    ``attachments_total_chars`` field of ``TurnObservation`` without having
-    to re-do the math. Raises ``HTTPException`` for session/attachment
-    problems; the caller wraps the LLM call separately.
+    Returns ``(session, enriched_transcript, attachments_total_chars)``.
+    This is the only place that has both the raw extracted attachment text
+    and the enriched transcript at once, so it is also the only place that
+    can compute ``attachments_total_chars`` cheaply (a plain sum over the
+    already-extracted strings, before ``enrich_transcript`` wraps each one
+    in its ``--- attachment: ... ---`` fence). Passing that count downstream
+    saves ``estimate_conversational`` from re-deriving it from the enriched
+    transcript. Raises ``HTTPException`` for session/attachment problems;
+    the caller wraps the LLM call separately.
     """
     try:
         session = store.get_or_404(session_id)

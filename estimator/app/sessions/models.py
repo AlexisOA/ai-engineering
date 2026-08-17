@@ -171,3 +171,14 @@ class Session(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_resolved_tier: str | None = None
     last_tier_rule: str | None = None
+    turn_count: int = Field(
+        default=0,
+        description=(
+            "Monotonic count of turns this session has processed. Cannot be "
+            "recovered from len(history.messages) once the sliding window "
+            "is at capacity — trimming pulls that number back down every "
+            "turn, so a derived count plateaus instead of growing. Needed "
+            "as its own field for the Session 6 stress harness's "
+            "turn_index."
+        ),
+    )

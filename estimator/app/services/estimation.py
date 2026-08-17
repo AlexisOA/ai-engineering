@@ -253,10 +253,14 @@ class EstimationService:
         #    operation now — compression (anchor promotion + cumulative
         #    summary + sliding window) is the next, explicit step.
         session.history.append(user=user_message, assistant=result.model_dump_json())
-        # Capture turn_index BEFORE compression: post-compression the sliding
-        # window plateaus at ``max_turns`` and ``len(messages) // 2`` would
-        # stop reflecting how many turns the session has actually seen.
-        turn_index = len(session.history.messages) // 2
+        # `session.turn_count` is an explicit counter, not derived from
+        # `len(session.history.messages)`: once the sliding window is at
+        # capacity, compression trims the message list back down every
+        # turn, so a length-derived count plateaus at `max_turns` instead
+        # of growing — exactly the failure mode the stress exercise exists
+        # to catch, so `turn_index` cannot itself be a victim of it.
+        session.turn_count += 1
+        turn_index = session.turn_count
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,
@@ -274,11 +278,14 @@ class EstimationService:
             model=self.metadata_extractor_model,
         )
 
-        # 8. Emit the unified per-turn observation. Single structured event
-        #    (rather than five log lines) makes the stress runner trivial: it
-        #    reads ``response.observation`` straight from the JSON and never
-        #    has to reconcile timestamps. ``cache_hit_kind`` is "none"
-        #    because the conversational path bypasses both caches by design.
+        # 8. Assemble the per-turn observation (Session 6 stress exercise).
+        #    Everything here already lives on `session` or `meta` by this
+        #    point in the method; the only job left is to read it after
+        #    compression + metadata refresh so the counts reflect the
+        #    post-turn state, not a stale mid-turn snapshot. One
+        #    `turn_observed` event replaces what used to be reconstructed
+        #    from `estimation_conversational_request` +
+        #    `estimation_conversational_generated` joined by timestamp.
         observation = TurnObservation(
             turn_index=max(1, turn_index),
             session_id=session.session_id,
@@ -287,10 +294,10 @@ class EstimationService:
             messages_in_window=len(session.history.messages),
             anchors_count=len(session.history.anchors),
             summary_chars=len(session.history.summary or ""),
-            tokens_in=int(meta.get("tokens_in", 0) or 0),
-            tokens_out=int(meta.get("tokens_out", 0) or 0),
-            cost_usd=float(meta.get("cost_usd", 0.0) or 0.0),
-            latency_ms=int(meta.get("latency_ms", 0) or 0),
+            tokens_in=int(meta.get("tokens_in") or 0),
+            tokens_out=int(meta.get("tokens_out") or 0),
+            cost_usd=float(meta.get("cost_usd") or 0.0),
+            latency_ms=int(meta.get("latency_ms") or 0),
             cache_hit_kind="none",
             last_resolved_tier=session.last_resolved_tier,
         )

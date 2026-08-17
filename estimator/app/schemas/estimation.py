@@ -109,28 +109,43 @@ class EstimationResult(BaseModel):
 
 
 class TurnObservation(BaseModel):
-    """Per-turn telemetry attached to a conversational response.
+    """Everything the Session 6 stress harness needs to know about one turn
+    of a conversational estimation, in a single object.
 
-    Populated by ``estimate_conversational`` only; the non-conversational
-    endpoint leaves ``EstimationResponse.observation`` as ``None``. The stress
-    runner reads this field directly from the JSON response — no log parsing.
+    Before this, the same information was scattered across five separate
+    ``structlog`` events emitted at different points of
+    ``estimate_conversational`` (request received, LLM completed, history
+    compressed, summarizer ran, metadata refreshed). Reconstructing one
+    turn's picture meant joining those events by timestamp. Bundling the
+    13 fields the stress runner actually needs into one model — returned
+    straight in the HTTP response — means the runner reads
+    ``response.json()["observation"]`` and never touches the container logs.
 
-    ``cache_hit_kind`` is always ``"none"`` for the conversational path
-    (sessions bypass both caches by design); the field is kept for symmetry
-    with the non-conversational endpoint and to document that choice.
+    Only ``estimate_conversational`` populates this; the stateless
+    ``estimate`` endpoint has no notion of turns, so its responses leave
+    ``observation`` as ``None``.
     """
 
-    turn_index: int = Field(ge=1)
+    turn_index: int = Field(ge=1, description="1-based turn count within the session.")
     session_id: str
-    enriched_transcript_chars: int = Field(ge=0)
-    attachments_total_chars: int = Field(ge=0)
-    messages_in_window: int = Field(ge=0)
+    enriched_transcript_chars: int = Field(
+        ge=0, description="len(transcript) after attachment text was folded in."
+    )
+    attachments_total_chars: int = Field(
+        ge=0, description="Sum of extracted attachment text; 0 when none was sent."
+    )
+    messages_in_window: int = Field(
+        ge=0, description="len(session.history.messages) after the sliding window ran."
+    )
     anchors_count: int = Field(ge=0)
-    summary_chars: int = Field(ge=0)
+    summary_chars: int = Field(ge=0, description="len(session.history.summary or '').")
     tokens_in: int = Field(ge=0)
     tokens_out: int = Field(ge=0)
     cost_usd: float = Field(ge=0)
     latency_ms: int = Field(ge=0)
+    # Always "none": the conversational path never touches either cache
+    # (every turn is shaped by session state, so there is nothing to key on).
+    # Kept so the CSV column means the same thing across both endpoints.
     cache_hit_kind: Literal["none", "exact", "semantic"] = "none"
     last_resolved_tier: str | None = None
 
@@ -139,10 +154,9 @@ class EstimationResponse(BaseModel):
     """Wraps the validated result, the prompt version that produced it, and
     whether it came from a cache (exact or semantic).
 
-    ``observation`` is populated only by the conversational endpoint
-    (``POST /sessions/{id}/estimate``). It carries the per-turn telemetry the
-    stress runner needs without contaminating the production contract — older
-    callers that ignore the field keep working.
+    ``observation`` rides along only on conversational responses — adding a
+    field that older callers simply ignore is cheaper than a second response
+    shape or a side-channel log the stress runner would have to parse.
     """
 
     result: EstimationResult

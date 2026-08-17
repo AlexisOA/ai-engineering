@@ -1,21 +1,19 @@
-"""Stress test scaffolding for the CAG (Cache-Augmented Generation) pipeline.
+"""CAG stress test for the Session 6 pre-exercise.
 
-Materialises the Session 6 pre-exercise: instrument the conversational
-estimator under load and produce a CSV + REPORT.md that quantifies where the
-context-augmented approach starts to degrade — latency, cost per turn,
-recall drift across many turns and growing attachments.
+Quantifies where the multi-turn, cache-augmented estimator (built through
+Session 5: sliding window, anchors, cumulative summary, ProjectMetadata,
+dynamic tier) starts to break under load, before RAG is introduced as the
+fix in the live session.
 
-The three submodules mirror the exercise's blocks:
+Submodules:
 
-- ``scenarios``  — synthetic multi-turn conversations with fact-trackers.
-- ``metrics``    — ``LatencyBudgetMetric``, ``CostBudgetMetric``,
-                   ``MemoryDriftMetric`` (read ``TurnObservation`` + session
-                   snapshot, not ``EstimationResult`` — hence kept apart
-                   from ``evals.metrics``).
-- ``run``        — CLI runner that orchestrates scenarios × attachment
-                   sizes × repeats and writes ``results.csv``.
-
-The PDFs consumed by ``run`` live under ``evals/stress/fixtures/`` and are
-generated on demand by ``fixtures/build_pdfs.py`` (the PDFs themselves are
-gitignored; only the build script is committed).
+- ``scenarios`` — synthetic 20-turn conversations (growing / pivot /
+  contradiction), each declaring the facts a later turn should still recall.
+- ``metrics``   — ``LatencyBudgetMetric``, ``CostBudgetMetric``,
+  ``MemoryDriftMetric``, evaluated against ``TurnObservation`` and session
+  snapshots rather than ``EstimationResult`` (see ``evals.metrics`` for the
+  golden-set metrics).
+- ``run``       — CLI that drives scenarios x attachment sizes x repeats
+  against a live estimator and writes ``results.csv``.
+- ``fixtures``  — deterministic PDF generator for the attachment sweep.
 """

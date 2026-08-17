@@ -1,157 +1,72 @@
-"""Session 6 stress test runner — empirically map where the CAG breaks.
+"""CLI runner for the Session 6 CAG stress test.
 
-Orchestrates ``scenarios × attachment_sizes × repeats`` against a running
-estimator (``--http`` mode) or an in-process ``TestClient`` (for smoke
-tests). For each turn it:
+For every ``(scenario, attachment_size_kb)`` cell, runs ``--repeats``
+independent conversations against a live estimator and writes one CSV row
+per turn. Each cell is an independent session, so cells run concurrently
+(bounded by ``--concurrency``); turns *within* a cell are strictly
+sequential because each depends on the session state the previous turn
+left behind.
 
-1. POSTs ``/sessions/{id}/estimate`` with the turn's transcript and the
-   pre-built PDF attachment (or none, for size 0).
-2. Reads ``response.observation`` (added in Bloque 1) — no log parsing.
-3. GETs ``/sessions/{id}`` to obtain the post-turn session snapshot for
-   ``MemoryDriftMetric``.
-4. Writes one CSV row with all telemetry + three boolean metric verdicts.
+The two exercise axes are deliberately decoupled into two invocations
+rather than one big cross product — Bloque 2 (multi-turn drift/cost) needs
+real conversation depth; Bloque 3 (attachment size) is explicitly "run the
+same initial estimation" per size, i.e. one turn. Crossing both at full
+depth multiplies real-LLM turns (and OpenAI rate-limit exposure) for no
+extra signal on either axis::
 
-The deliverable is the CSV — the alumno reads it and writes ``REPORT.md``
-with the lectures. The runner does not generate the report.
-
-Run with::
-
+    # Axis 1: memory drift + cost-per-turn, no attachment noise.
     uv run python -m evals.stress.run \\
         --http http://localhost:8000 \\
         --scenarios growing,pivot,contradiction \\
-        --attachment-sizes 0,5,20,50,100 \\
+        --attachment-sizes 0 \\
         --repeats 3 \\
         --output evals/stress/results.csv
+
+    # Axis 2: latency/cost vs attachment size, single turn per size.
+    uv run python -m evals.stress.run \\
+        --http http://localhost:8000 \\
+        --scenarios growing \\
+        --attachment-sizes 5,20,50,100 \\
+        --repeats 3 \\
+        --max-turns 1 \\
+        --output evals/stress/results.csv \\
+        --append
+
+Only ``--http`` mode is supported: this exercise measures a real, running
+estimator (real LLM, real PDFs), not the in-process test double the golden
+eval suite uses for CI speed.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import csv
-import sys
-import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.schemas.estimation import TurnObservation
-from evals.stress.metrics import (
-    CostBudgetMetric,
-    LatencyBudgetMetric,
-    MemoryDriftMetric,
-)
-from evals.stress.scenarios import Scenario, ScenarioTurn, get_scenario
+from evals.stress.fixtures.build_pdfs import fixture_path
+from evals.stress.metrics import CostBudgetMetric, LatencyBudgetMetric, MemoryDriftMetric
+from evals.stress.scenarios import get_scenario
 
-
-_FIXTURES_DIR = Path(__file__).parent / "fixtures"
-
-
-# -- transport ---------------------------------------------------------------
-
-
-@contextmanager
-def _open_client(http_base_url: str | None) -> Iterator[httpx.Client | Any]:
-    """Yield a sync client. ``--http`` → real httpx; otherwise ``TestClient``.
-
-    ``TestClient`` is imported lazily so the import cost is only paid in
-    smoke mode — and so the runner does not require fastapi at import time
-    in environments that only need ``--http`` (e.g. running from a CI box
-    pointing at a remote service).
-    """
-    if http_base_url:
-        with httpx.Client(base_url=http_base_url, timeout=180.0) as client:
-            yield client
-        return
-
-    # In-process: TestClient + isolated SessionStore so dev sessions don't leak.
-    from fastapi.testclient import TestClient
-
-    from app.dependencies import get_session_store
-    from app.main import app
-    from app.sessions.store import SessionStore
-
-    store = SessionStore(max_turns=6)
-    app.dependency_overrides[get_session_store] = lambda: store
-    try:
-        with TestClient(app) as client:
-            yield client
-    finally:
-        app.dependency_overrides.pop(get_session_store, None)
-
-
-# -- per-turn execution ------------------------------------------------------
-
-
-def _form_body(scenario: Scenario, turn: ScenarioTurn) -> dict[str, str]:
-    return {
-        "transcript": turn.transcript,
-        "project_type": scenario.project_type.value,
-        "detail_level": scenario.detail_level.value,
-        "output_format": scenario.output_format.value,
-    }
-
-
-def _attachment_files(size_kb: int) -> list[tuple[str, tuple[str, bytes, str]]] | None:
-    if size_kb == 0:
-        return None
-    path = _FIXTURES_DIR / f"attach_{size_kb}kb.pdf"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Fixture {path} missing — run "
-            "`uv run python -m evals.stress.fixtures.build_pdfs` first."
-        )
-    return [("attachments", (path.name, path.read_bytes(), "application/pdf"))]
-
-
-def _execute_turn(
-    client: httpx.Client,
-    session_id: str,
-    scenario: Scenario,
-    turn: ScenarioTurn,
-    files: list | None,
-) -> tuple[TurnObservation, dict[str, Any], int]:
-    """One POST estimate + one GET snapshot.
-
-    Returns ``(observation, snapshot, wall_clock_ms)``. The wall-clock time
-    includes the round-trip; ``observation.latency_ms`` is the LLM-only
-    latency measured server-side. Both are useful: the gap is network + the
-    extractor + the second metadata-extraction call.
-    """
-    t0 = time.perf_counter()
-    response = client.post(
-        f"/sessions/{session_id}/estimate",
-        data=_form_body(scenario, turn),
-        files=files,
-    )
-    wall_ms = int((time.perf_counter() - t0) * 1000)
-    response.raise_for_status()
-    payload = response.json()
-
-    observation_dict = payload.get("observation")
-    if observation_dict is None:
-        raise RuntimeError(
-            "response.observation is missing — did Bloque 1 ship in this "
-            "estimator? Rebuild the docker image."
-        )
-    observation = TurnObservation(**observation_dict)
-
-    snapshot_response = client.get(f"/sessions/{session_id}")
-    snapshot_response.raise_for_status()
-    snapshot = snapshot_response.json()
-
-    return observation, snapshot, wall_ms
-
-
-# -- main loop ---------------------------------------------------------------
-
-
-_CSV_COLUMNS = [
+# ``scenario_turn`` is this cell's 1-based request count — it always
+# advances, and it's what determines which scripted fact/content the
+# runner just sent (so "does the turn-3 fact still show up" means turn-3
+# by this column). ``turn_index`` is the server's own count of turns the
+# session actually *completed* (``Session.turn_count``, from
+# ``TurnObservation``) — it does not advance on a failed turn (the LLM
+# call never reaches history.append), so once any turn in a cell fails,
+# the two columns diverge. Both are kept: scenario_turn anchors "what was
+# sent", turn_index anchors "how much context has the session actually
+# accumulated".
+CSV_COLUMNS = [
     "scenario",
     "attachment_size_kb",
     "repeat",
+    "scenario_turn",
     "turn_index",
     "session_id",
     "enriched_transcript_chars",
@@ -163,202 +78,281 @@ _CSV_COLUMNS = [
     "tokens_out",
     "cost_usd",
     "latency_ms",
-    "wall_clock_ms",
     "cache_hit_kind",
     "last_resolved_tier",
-    "latency_budget_passed",
-    "cost_budget_passed",
-    "memory_drift_passed",
-    "tracked_fact",
-    "error",
+    "cumulative_cost_usd",
+    "latency_budget_pass",
+    "cost_budget_pass",
+    "memory_drift_fact",
+    "memory_drift_pass",
+    "http_status",
 ]
 
+# Held constant across every turn/cell so the only thing that varies between
+# rows is what the exercise is actually measuring (scenario, attachment
+# size, turn depth) — mixing project types or output formats would confound
+# the curves.
+_PROJECT_TYPE = "web_saas"
+_DETAIL_LEVEL = "medium"
+_OUTPUT_FORMAT = "phases_table"
 
-def _run_one_session(
-    client: httpx.Client,
-    scenario: Scenario,
-    size_kb: int,
+
+async def _run_cell(
+    client: httpx.AsyncClient,
+    *,
+    scenario_name: str,
+    attachment_size_kb: int,
     repeat: int,
     latency_metric: LatencyBudgetMetric,
     cost_metric: CostBudgetMetric,
-    writer: csv.DictWriter,
-) -> int:
-    """Walk the full scenario once. Returns rows written."""
-    files = _attachment_files(size_kb)
+    max_turns: int | None = None,
+) -> list[dict[str, Any]]:
+    scenario = get_scenario(scenario_name)
+    turns = scenario.turns[:max_turns] if max_turns else scenario.turns
 
-    create_resp = client.post("/sessions")
-    create_resp.raise_for_status()
-    session_id = create_resp.json()["session_id"]
+    try:
+        create = await client.post("/sessions")
+        create.raise_for_status()
+        session_id = create.json()["session_id"]
+    except httpx.HTTPError as exc:
+        return [
+            {
+                "scenario": scenario_name,
+                "attachment_size_kb": attachment_size_kb,
+                "repeat": repeat,
+                "turn_index": 0,
+                "session_id": "",
+                "http_status": f"error:{type(exc).__name__}",
+            }
+        ]
 
-    # Track the turn-1 anchor fact across the whole session. That's the
-    # canonical "is the project_name from the start still alive at turn N?"
-    # measurement. Additional facts could be threaded with the same pattern.
-    tracked_fact = scenario.turns[0].fact_introduced
-    tracked_field = scenario.turns[0].fact_field
-    drift_metric = (
-        MemoryDriftMetric(fact=tracked_fact, fact_field=tracked_field)
-        if tracked_fact
-        else None
-    )
+    rows: list[dict[str, Any]] = []
+    cumulative_cost = 0.0
+    current_fact: str | None = None
+    current_fact_field = "any"
 
-    rows_written = 0
-    for turn in scenario.turns:
-        row: dict[str, Any] = {
-            "scenario": scenario.name,
-            "attachment_size_kb": size_kb,
-            "repeat": repeat,
-            "tracked_fact": tracked_fact or "",
+    for turn_number, turn in enumerate(turns, start=1):
+        data = {
+            "transcript": turn.transcript,
+            "project_type": _PROJECT_TYPE,
+            "detail_level": _DETAIL_LEVEL,
+            "output_format": _OUTPUT_FORMAT,
         }
+        files = None
+        if turn_number == 1 and attachment_size_kb > 0:
+            pdf_bytes = fixture_path(attachment_size_kb).read_bytes()
+            files = {
+                "attachments": (
+                    f"attach_{attachment_size_kb}kb.pdf",
+                    pdf_bytes,
+                    "application/pdf",
+                )
+            }
+
+        # A single flaky/slow turn (timeout, connection reset, 5xx) must not
+        # take down the whole sweep — record it as an error row and move on
+        # to the next cell. The session itself may be unusable after this,
+        # so we stop walking turns for this cell rather than pretend to
+        # continue a conversation with a gap in it.
         try:
-            observation, snapshot, wall_ms = _execute_turn(
-                client, session_id, scenario, turn, files
+            response = await client.post(
+                f"/sessions/{session_id}/estimate", data=data, files=files
             )
-        except Exception as exc:  # noqa: BLE001
-            row.update(
+            http_status = response.status_code
+        except httpx.HTTPError as exc:
+            rows.append(
                 {
-                    "turn_index": "",
-                    "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+                    "scenario": scenario_name,
+                    "attachment_size_kb": attachment_size_kb,
+                    "repeat": repeat,
+                    "turn_index": turn_number,
+                    "session_id": session_id,
+                    "http_status": f"error:{type(exc).__name__}",
                 }
             )
-            writer.writerow(row)
-            rows_written += 1
-            # Aborting the rest of this session — a 5xx mid-conversation
-            # would skew memory drift for later turns.
             break
 
-        latency_pass = latency_metric.evaluate(observation).passed
-        cost_pass = cost_metric.evaluate(observation).passed
-        if drift_metric is None or observation.turn_index == 1:
-            # Turn 1 trivially "remembers" itself; the fact is whatever it
-            # just stated. Skip the metric for that row (NaN-as-empty).
-            drift_pass = ""
-        else:
-            drift_pass = bool(drift_metric.evaluate(snapshot).passed)
+        if http_status != 200:
+            rows.append(
+                {
+                    "scenario": scenario_name,
+                    "attachment_size_kb": attachment_size_kb,
+                    "repeat": repeat,
+                    "scenario_turn": turn_number,
+                    "session_id": session_id,
+                    "http_status": http_status,
+                }
+            )
+            continue
 
-        row.update(
+        payload = response.json()
+        observation = TurnObservation.model_validate(payload["observation"])
+        cumulative_cost += observation.cost_usd
+
+        if turn.fact:
+            current_fact = turn.fact
+            current_fact_field = turn.fact_field or "any"
+
+        memory_drift_pass: bool | None = True
+        if current_fact is not None:
+            try:
+                snapshot_resp = await client.get(f"/sessions/{session_id}")
+                snapshot_resp.raise_for_status()
+                drift = MemoryDriftMetric(
+                    fact=current_fact, fact_field=current_fact_field
+                ).evaluate(snapshot_resp.json())
+                memory_drift_pass = drift.passed
+            except httpx.HTTPError:
+                memory_drift_pass = None
+
+        latency_result = latency_metric.evaluate(observation)
+        cost_result = cost_metric.evaluate(observation)
+
+        rows.append(
             {
-                **observation.model_dump(),
-                "wall_clock_ms": wall_ms,
-                "latency_budget_passed": latency_pass,
-                "cost_budget_passed": cost_pass,
-                "memory_drift_passed": drift_pass,
-                "error": "",
+                "scenario": scenario_name,
+                "attachment_size_kb": attachment_size_kb,
+                "repeat": repeat,
+                "scenario_turn": turn_number,
+                "turn_index": observation.turn_index,
+                "session_id": session_id,
+                "enriched_transcript_chars": observation.enriched_transcript_chars,
+                "attachments_total_chars": observation.attachments_total_chars,
+                "messages_in_window": observation.messages_in_window,
+                "anchors_count": observation.anchors_count,
+                "summary_chars": observation.summary_chars,
+                "tokens_in": observation.tokens_in,
+                "tokens_out": observation.tokens_out,
+                "cost_usd": observation.cost_usd,
+                "latency_ms": observation.latency_ms,
+                "cache_hit_kind": observation.cache_hit_kind,
+                "last_resolved_tier": observation.last_resolved_tier,
+                "cumulative_cost_usd": round(cumulative_cost, 6),
+                "latency_budget_pass": latency_result.passed,
+                "cost_budget_pass": cost_result.passed,
+                "memory_drift_fact": current_fact or "",
+                "memory_drift_pass": memory_drift_pass,
+                "http_status": http_status,
             }
         )
-        writer.writerow(row)
-        rows_written += 1
-
-    return rows_written
+    return rows
 
 
-def _print_summary(csv_path: Path) -> None:
-    """Reload the CSV and print P50/P95 + means per (scenario, size)."""
-    by_group: dict[tuple[str, str], list[dict[str, str]]] = {}
-    with csv_path.open() as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            if row.get("error"):
-                continue
-            key = (row["scenario"], row["attachment_size_kb"])
-            by_group.setdefault(key, []).append(row)
+async def _run_all(
+    *,
+    base_url: str,
+    scenarios: list[str],
+    attachment_sizes: list[int],
+    repeats: int,
+    concurrency: int,
+    latency_budget_ms: int,
+    cost_budget_usd: float,
+    output: Path,
+    append: bool = False,
+    max_turns: int | None = None,
+) -> list[dict[str, Any]]:
+    """Run every cell and flush its rows to ``output`` as soon as the cell
+    finishes — real-LLM sweeps take long enough that losing everything to
+    one late failure, or having zero visibility until the very end, would
+    make them impractical to babysit. ``append`` lets a second invocation
+    (e.g. the attachment-size axis) land in the same CSV as a first one
+    (e.g. the multi-turn scenario axis) without clobbering it."""
+    latency_metric = LatencyBudgetMetric(budget_ms=latency_budget_ms)
+    cost_metric = CostBudgetMetric(budget_usd=cost_budget_usd)
+    semaphore = asyncio.Semaphore(concurrency)
 
-    print("\nSummary (per scenario × attachment size)")
-    header = f"{'scenario':<14} {'kb':>4} {'n':>4} {'P50 ms':>8} {'P95 ms':>8} {'tot $':>10} {'drift%':>7}"
-    print(header)
-    print("-" * len(header))
-    for (scenario, size_kb), rows in sorted(by_group.items()):
-        latencies = sorted(int(r["latency_ms"]) for r in rows)
-        costs = [float(r["cost_usd"]) for r in rows]
-        drifts = [r["memory_drift_passed"] for r in rows if r["memory_drift_passed"] != ""]
-        p50 = latencies[len(latencies) // 2] if latencies else 0
-        p95_idx = max(0, int(len(latencies) * 0.95) - 1)
-        p95 = latencies[p95_idx] if latencies else 0
-        total_cost = sum(costs)
-        drift_pct = (
-            100.0 * sum(1 for d in drifts if d == "True") / len(drifts) if drifts else 0.0
-        )
-        print(
-            f"{scenario:<14} {size_kb:>4} {len(rows):>4} "
-            f"{p50:>8} {p95:>8} {total_cost:>10.4f} {drift_pct:>6.1f}%"
-        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    all_rows: list[dict[str, Any]] = []
+    write_header = not (append and output.exists() and output.stat().st_size > 0)
+    mode = "a" if append else "w"
+
+    with output.open(mode, newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+        if write_header:
+            writer.writeheader()
+        fh.flush()
+
+        async with httpx.AsyncClient(base_url=base_url, timeout=180.0) as client:
+
+            async def _bounded_cell(scenario_name: str, size_kb: int, repeat: int):
+                async with semaphore:
+                    return await _run_cell(
+                        client,
+                        scenario_name=scenario_name,
+                        attachment_size_kb=size_kb,
+                        repeat=repeat,
+                        latency_metric=latency_metric,
+                        cost_metric=cost_metric,
+                        max_turns=max_turns,
+                    )
+
+            cells = [
+                (scenario_name, size_kb, repeat)
+                for scenario_name in scenarios
+                for size_kb in attachment_sizes
+                for repeat in range(1, repeats + 1)
+            ]
+            tasks = [asyncio.ensure_future(_bounded_cell(*cell)) for cell in cells]
+            print(f"Running {len(tasks)} cells (scenario x size x repeat), concurrency={concurrency}")
+
+            done = 0
+            for task in asyncio.as_completed(tasks):
+                cell_rows = await task
+                for row in cell_rows:
+                    writer.writerow({col: row.get(col, "") for col in CSV_COLUMNS})
+                    all_rows.append(row)
+                fh.flush()
+                done += 1
+                print(f"  cell {done}/{len(tasks)} done ({len(cell_rows)} rows written)")
+
+    return all_rows
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--http",
-        default=None,
-        help="Base URL of a running estimator (e.g. http://localhost:8000). "
-        "If omitted, the runner uses an in-process TestClient (smoke only).",
-    )
-    parser.add_argument(
-        "--scenarios",
-        default="growing,pivot,contradiction",
-        help="Comma-separated scenario names.",
-    )
-    parser.add_argument(
-        "--attachment-sizes",
-        default="0,5,20,50,100",
-        help="Comma-separated PDF sizes in KB. 0 = no attachment.",
-    )
+    parser.add_argument("--http", required=True, help="Base URL, e.g. http://localhost:8000")
+    parser.add_argument("--scenarios", default="growing,pivot,contradiction")
+    parser.add_argument("--attachment-sizes", default="0,5,20,50,100")
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--latency-budget-ms", type=int, default=8000)
     parser.add_argument("--cost-budget-usd", type=float, default=0.02)
+    parser.add_argument("--output", type=Path, default=Path("evals/stress/results.csv"))
     parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("evals/stress/results.csv"),
-        help="CSV path (relative to current working directory).",
+        "--append",
+        action="store_true",
+        help="Append to --output instead of overwriting (for a second, decoupled axis).",
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help="Truncate every scenario to at most this many turns (e.g. 1 for a single-turn probe).",
     )
     args = parser.parse_args()
 
-    scenarios = [get_scenario(name.strip()) for name in args.scenarios.split(",")]
-    sizes = [int(s) for s in args.attachment_sizes.split(",")]
+    scenarios = [s.strip() for s in args.scenarios.split(",") if s.strip()]
+    attachment_sizes = [int(s.strip()) for s in args.attachment_sizes.split(",") if s.strip()]
 
-    # Fail early if any fixture is missing — cheaper than discovering it
-    # mid-run after a 30-minute LLM marathon.
-    for kb in sizes:
-        if kb != 0:
-            _attachment_files(kb)
-
-    latency_metric = LatencyBudgetMetric(budget_ms=args.latency_budget_ms)
-    cost_metric = CostBudgetMetric(budget_usd=args.cost_budget_usd)
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    print(
-        f"Stress run: {len(scenarios)} scenarios × {len(sizes)} sizes × "
-        f"{args.repeats} repeats × up to 20 turns each"
+    rows = asyncio.run(
+        _run_all(
+            base_url=args.http,
+            scenarios=scenarios,
+            attachment_sizes=attachment_sizes,
+            repeats=args.repeats,
+            concurrency=args.concurrency,
+            latency_budget_ms=args.latency_budget_ms,
+            cost_budget_usd=args.cost_budget_usd,
+            output=args.output,
+            append=args.append,
+            max_turns=args.max_turns,
+        )
     )
-    total_rows = 0
-    t_start = time.perf_counter()
-    with args.output.open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=_CSV_COLUMNS)
-        writer.writeheader()
-        with _open_client(args.http) as client:
-            for scenario in scenarios:
-                for size_kb in sizes:
-                    for repeat in range(args.repeats):
-                        print(
-                            f"  → {scenario.name:<14} kb={size_kb:>3} "
-                            f"repeat={repeat + 1}/{args.repeats}"
-                        )
-                        rows = _run_one_session(
-                            client,
-                            scenario,
-                            size_kb,
-                            repeat,
-                            latency_metric,
-                            cost_metric,
-                            writer,
-                        )
-                        total_rows += rows
-                        fh.flush()
 
-    elapsed_s = int(time.perf_counter() - t_start)
-    print(f"\nWrote {total_rows} rows to {args.output} in {elapsed_s}s")
-    _print_summary(args.output)
-    return 0
+    error_rows = sum(1 for r in rows if r.get("http_status") != 200)
+    print(f"\nWrote {len(rows)} rows to {args.output} ({error_rows} errored turns)")
+    return 0 if error_rows == 0 else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

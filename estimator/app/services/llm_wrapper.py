@@ -214,7 +214,12 @@ class LLMWrapper:
         )
         t0 = time.perf_counter()
         try:
-            result = self._instructor.chat.completions.create(
+            # `create_with_completion` (rather than plain `create`) also
+            # hands back the raw provider response, which is the only place
+            # token usage lives — Instructor's parsed Pydantic model doesn't
+            # carry it. The stress harness (Session 6) needs real
+            # tokens_in/tokens_out/cost_usd per turn, not just latency.
+            result, completion = self._instructor.chat.completions.create_with_completion(
                 model=target_model,
                 api_key=api_key,
                 timeout=self.timeout,
@@ -234,16 +239,26 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
+        usage = getattr(completion, "usage", None)
+        tokens_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+        tokens_out = int(getattr(usage, "completion_tokens", 0) or 0)
+        model_name = _normalise_model_name(target_model)
         meta = {
-            "model": _normalise_model_name(target_model),
+            "model": model_name,
             "provider": _provider_from_model(target_model),
             "latency_ms": latency_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": _estimate_cost(model_name, tokens_in, tokens_out),
         }
         log.info(
             "llm_structured_chat_completed",
             model=meta["model"],
             provider=meta["provider"],
             latency_ms=latency_ms,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=meta["cost_usd"],
         )
         return result, meta
 
@@ -259,9 +274,10 @@ class LLMWrapper:
     ) -> tuple[T, dict[str, Any]]:
         """Run the LLM with Instructor and return ``(model_instance, meta)``.
 
-        ``meta`` includes ``model``, ``provider`` and ``latency_ms``. Instructor
-        re-prompts the LLM up to ``max_retries`` times when a Pydantic validator
-        raises, feeding the ``ValueError`` message back to the model.
+        ``meta`` includes ``model``, ``provider``, ``latency_ms``,
+        ``tokens_in``, ``tokens_out`` and ``cost_usd``. Instructor re-prompts
+        the LLM up to ``max_retries`` times when a Pydantic validator raises,
+        feeding the ``ValueError`` message back to the model.
 
         Streaming bypasses are not relevant here — the entire model is built
         atomically by Instructor before this function returns.
@@ -285,7 +301,7 @@ class LLMWrapper:
         )
         t0 = time.perf_counter()
         try:
-            result = self._instructor.chat.completions.create(
+            result, completion = self._instructor.chat.completions.create_with_completion(
                 model=target_model,
                 api_key=api_key,
                 timeout=self.timeout,
@@ -305,16 +321,26 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
+        usage = getattr(completion, "usage", None)
+        tokens_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+        tokens_out = int(getattr(usage, "completion_tokens", 0) or 0)
+        model_name = _normalise_model_name(target_model)
         meta = {
-            "model": _normalise_model_name(target_model),
+            "model": model_name,
             "provider": _provider_from_model(target_model),
             "latency_ms": latency_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": _estimate_cost(model_name, tokens_in, tokens_out),
         }
         log.info(
             "llm_structured_call_completed",
             model=meta["model"],
             provider=meta["provider"],
             latency_ms=latency_ms,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=meta["cost_usd"],
         )
         return result, meta
 
