@@ -1,0 +1,132 @@
+thread_id: session13-demo-run
+status: validated
+requirements: [
+  "The platform must unify functionality currently spread across four different systems.",
+  "The system must include a business backend for order management.",
+  "The system must include route assignment functionality.",
+  "The system must include shipment tracking functionality.",
+  "The system must include fare calculation functionality.",
+  "The backend must expose an API for all other components.",
+  "The system must integrate with SAP ERP.",
+  "The SAP integration must synchronize billing information.",
+  "The SAP integration must synchronize customer data.",
+  "The SAP integration must synchronize the master item catalog.",
+  "The SAP integration must map IDocs.",
+  "The SAP integration must include a middleware layer.",
+  "The SAP integration must handle retry logic.",
+  "The system must include a mobile app for delivery drivers on Android.",
+  "The system must include a mobile app for delivery drivers on iOS.",
+  "The mobile app must display the driver's daily route sheet.",
+  "The mobile app must allow confirmation of deliveries with signature capture.",
+  "The mobile app must allow confirmation of deliveries with photo capture.",
+  "The mobile app must function in offline mode without network coverage.",
+  "The mobile app must synchronize data when connectivity is restored.",
+  "The mobile app interface must be very simple for non-technical users.",
+  "The system must include an analytics dashboard.",
+  "The analytics dashboard must display KPIs for on-time deliveries.",
+  "The analytics dashboard must display cost per route metrics.",
+  "The analytics dashboard must display incident metrics.",
+  "The analytics dashboard must show trends over time.",
+  "The analytics dashboard must allow filtering by geographic zone.",
+  "The analytics dashboard must allow filtering by customer.",
+  "The analytics dashboard must provide alerts when metrics fall outside normal ranges.",
+  "The backend and SAP integration must be prioritized first in development.",
+  "The estimation must break down effort by component.",
+  "The estimation must provide a total effort estimate."
+]
+components: [
+  {
+    "name": "Business Backend",
+    "category": "backend"
+  },
+  {
+    "name": "SAP ERP Integration",
+    "category": "integration"
+  },
+  {
+    "name": "Mobile App for Delivery Drivers",
+    "category": "mobile"
+  },
+  {
+    "name": "Analytics Dashboard",
+    "category": "analytics"
+  }
+]
+budget_matches: [
+  {
+    "component": "Business Backend",
+    "reference_budget_id": "BUD-CORE-2023-02",
+    "amount": 1150.0
+  },
+  {
+    "component": "Business Backend",
+    "reference_budget_id": "BUD-CORE-2022-09",
+    "amount": 940.0
+  },
+  {
+    "component": "SAP ERP Integration",
+    "reference_budget_id": "BUD-SAP-2023-05",
+    "amount": 860.0
+  },
+  {
+    "component": "SAP ERP Integration",
+    "reference_budget_id": "BUD-SAP-2021-12",
+    "amount": 720.0
+  },
+  {
+    "component": "Mobile App for Delivery Drivers",
+    "reference_budget_id": "BUD-APP-2023-03",
+    "amount": 780.0
+  },
+  {
+    "component": "Mobile App for Delivery Drivers",
+    "reference_budget_id": "BUD-APP-2022-06",
+    "amount": 640.0
+  },
+  {
+    "component": "Mobile App for Delivery Drivers",
+    "reference_budget_id": "BUD-BI-2022-04",
+    "amount": 430.0
+  },
+  {
+    "component": "Analytics Dashboard",
+    "reference_budget_id": "BUD-BI-2023-01",
+    "amount": 560.0
+  },
+  {
+    "component": "Analytics Dashboard",
+    "reference_budget_id": "BUD-BI-2022-04",
+    "amount": 430.0
+  }
+]
+errors: []
+estimate: {
+  "components": [
+    {
+      "name": "Business Backend",
+      "estimated_hours": 1201.8,
+      "reference_count": 2,
+      "unbudgeted": false
+    },
+    {
+      "name": "SAP ERP Integration",
+      "estimated_hours": 908.5,
+      "reference_count": 2,
+      "unbudgeted": false
+    },
+    {
+      "name": "Mobile App for Delivery Drivers",
+      "estimated_hours": 736.0,
+      "reference_count": 3,
+      "unbudgeted": false
+    },
+    {
+      "name": "Analytics Dashboard",
+      "estimated_hours": 569.2,
+      "reference_count": 2,
+      "unbudgeted": false
+    }
+  ],
+  "total_hours": 3415.5,
+  "summary": "total=3415.5h across 4 components"
+}

@@ -1,7 +1,7 @@
-import structlog
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from uuid import uuid4
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -14,11 +14,15 @@ from app.api import estimations, ingestion, sessions
 from app.api.rate_limiting import limiter, rate_limit_exceeded_handler
 from app.api.routers.estimate import router as estimate_router
 from app.api.routers.estimate_agent import router as estimate_agent_router
+from app.api.routers.estimate_graph import router as estimate_graph_router
 from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
 from app.api.routers.corpus_index import router as corpus_index_router
 from app.api.routers.retrieval import router as retrieval_router
 from app.api.routers.retrieval_advanced import router as retrieval_advanced_router
+from app.domain.graph.build import build_graph
+from app.domain.graph.checkpointer import open_checkpointer
+from app.domain.graph.observability import configure_logfire
 
 
 def configure_logging() -> None:
@@ -67,8 +71,22 @@ async def lifespan(app: FastAPI):
         )
     except Exception as exc:  # noqa: BLE001
         log.error("catalog_load_failed", error=str(exc)[:400])
+
+    # Session 13: the estimation graph's checkpointer lives for the app's
+    # lifetime. A broken Postgres connection disables /v1/estimate/graph (503)
+    # without taking down the rest of the service.
+    app.state.graph = None
+    graph_stack = AsyncExitStack()
+    try:
+        checkpointer = await graph_stack.enter_async_context(open_checkpointer())
+        app.state.graph = build_graph(checkpointer)
+        log.info("estimation_graph_ready")
+    except Exception as exc:  # noqa: BLE001
+        log.error("estimation_graph_setup_failed", error=str(exc)[:400])
+
     log.info("application_started", environment=settings.APP_ENV)
     yield
+    await graph_stack.aclose()
     log.info("application_shutdown")
 
 
@@ -80,6 +98,10 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# Session 13: instrument before any request is served. Safe without a Logfire
+# account — spans stay local (console) instead of being sent anywhere.
+configure_logfire(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -129,6 +151,8 @@ app.include_router(estimate_stages_router)
 app.include_router(estimate_tasks_router)
 # Session 12 — hand-written agent over the budget retrieval (decision layer).
 app.include_router(estimate_agent_router)
+# Session 13 — same flow re-expressed as an explicit, checkpointed LangGraph.
+app.include_router(estimate_graph_router)
 
 
 @app.get("/health")
