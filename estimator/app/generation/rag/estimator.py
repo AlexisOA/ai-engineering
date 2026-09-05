@@ -31,7 +31,7 @@ from app.generation.rag.prompt_builder import (
 from app.generation.rag.query_reformulator import compose_search_text, reformulate_query
 from app.generation.rag.retrieval.pipeline import retrieve
 from app.generation.rag.schemas import Estimate, EstimationQuery
-from app.generation.rag.validation import check_coherence, validate_citations
+from app.generation.rag.validation import check_coherence, verify_citations
 
 log = structlog.get_logger()
 
@@ -261,16 +261,17 @@ async def estimate_from_transcript(
     with log_stage("generation", request_id, sources=len(kept)):
         estimate = await generate_estimate(context_block, structured_query=query)
 
-    # 6. Validate citations; one corrective retry on fabricated ids.
-    fabricated = validate_citations(estimate, kept)
-    if fabricated:
+    # 6. Verify citations; one corrective retry on dangling (fabricated) ids.
+    report = verify_citations(estimate, kept)
+    if not report.is_clean:
         feedback = (
-            f"your previous response cited invalid source ids: {fabricated}. "
+            f"your previous response cited invalid source ids: {report.fabricated_chunk_ids}. "
             "Only cite ids that appear in the <sources> block."
         )
-        with log_stage("citation_retry", request_id, fabricated=fabricated):
+        with log_stage("citation_retry", request_id, fabricated=report.fabricated_chunk_ids):
             estimate = await _generate(context_block, query, feedback=feedback)
-        if validate_citations(estimate, kept):
+        report = verify_citations(estimate, kept)
+        if not report.is_clean:
             log.warning("citations_unrepaired", request_id=request_id)
             estimate = estimate.model_copy(update={"confidence": "low"})
 

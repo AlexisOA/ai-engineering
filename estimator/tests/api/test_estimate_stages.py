@@ -2,7 +2,7 @@
 
 Downstream work (LLM, embeddings, pgvector) is stubbed; the focus is the auth
 boundary, the stateless stage contracts, and the grounding signals from the
-generate stage (which exercises the REAL ``validate_citations`` /
+generate stage (which exercises the REAL ``verify_citations`` /
 ``check_coherence`` rather than mocking them).
 """
 
@@ -28,8 +28,12 @@ RET_KEY = "retrieval-secret"
 
 def _chunk(cid: int, content: str = "Auth & RBAC component: ~12 engineer-days.") -> RetrievedChunk:
     return RetrievedChunk(
-        id=cid, content=content, sector="ecommerce", project_year=2024,
-        chunk_type="budget_component", distance=0.3,
+        id=cid,
+        content=content,
+        sector="ecommerce",
+        project_year=2024,
+        chunk_type="budget_component",
+        distance=0.3,
     )
 
 
@@ -45,12 +49,17 @@ def stub(monkeypatch):
         return EstimationQuery(function="online store with card checkout", sector="ecommerce")
 
     async def fake_search(query_embedding, **kwargs):
-        return RetrievalResult(chunks=[_chunk(1), _chunk(2)], low_confidence=False, candidates_evaluated=12)
+        return RetrievalResult(
+            chunks=[_chunk(1), _chunk(2)], low_confidence=False, candidates_evaluated=12
+        )
 
     monkeypatch.setattr(stages, "reformulate_query", fake_reformulate)
-    monkeypatch.setattr(stages, "compose_search_text", lambda q: "online store card checkout ecommerce")
     monkeypatch.setattr(
-        stages, "get_embedder",
+        stages, "compose_search_text", lambda q: "online store card checkout ecommerce"
+    )
+    monkeypatch.setattr(
+        stages,
+        "get_embedder",
         lambda: type("E", (), {"embed_one": staticmethod(lambda t: [0.0] * 1536)})(),
     )
     monkeypatch.setattr(stages, "search_chunks", fake_search)
@@ -71,6 +80,7 @@ _TRANSCRIPT = {"transcript": "x" * 200}
 
 # --- auth boundary ---------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "path,body",
     [
@@ -87,6 +97,7 @@ def test_stage_requires_estimate_key(client, path, body):
 
 # --- reformulate -----------------------------------------------------------
 
+
 def test_reformulate_returns_query_and_search_text(client):
     r = client.post("/v1/estimate/stages/reformulate", json=_TRANSCRIPT, headers=_h())
     assert r.status_code == 200
@@ -96,6 +107,7 @@ def test_reformulate_returns_query_and_search_text(client):
 
 
 # --- retrieve --------------------------------------------------------------
+
 
 def test_retrieve_passes_through_chunks(client):
     r = client.post(
@@ -127,6 +139,7 @@ def test_retrieve_soft_fail_passthrough(client, monkeypatch):
 
 # --- assemble (real context_assembler + tiktoken) --------------------------
 
+
 def test_assemble_wraps_chunks_in_xml(client):
     payload = {"chunks": [_chunk(1).model_dump(), _chunk(2).model_dump()]}
     r = client.post("/v1/estimate/stages/assemble", json=payload, headers=_h())
@@ -151,7 +164,8 @@ def test_assemble_drops_chunks_over_budget(client):
     assert len(body["kept_chunks"]) < 5
 
 
-# --- generate (real validate_citations + check_coherence) ------------------
+# --- generate (real verify_citations + check_coherence) --------------------
+
 
 def _generate_payload(estimate: Estimate) -> dict:
     return {
@@ -208,7 +222,15 @@ def test_structure_returns_clean_estimate_without_sources(client, monkeypatch):
     estimate = Estimate(
         confidence="high",
         reasoning="decomposed from the brief",
-        modules=[{"name": "Auth", "tasks": [{"name": "OAuth login"}, {"name": "RBAC"}]}],
+        modules=[
+            {
+                "name": "Auth",
+                "tasks": [
+                    {"name": "OAuth login", "grounded": False},
+                    {"name": "RBAC", "grounded": False},
+                ],
+            }
+        ],
     )
 
     async def fake_structure(query):
@@ -231,17 +253,23 @@ def test_structure_returns_clean_estimate_without_sources(client, monkeypatch):
 def test_structure_requires_estimate_key(client):
     body = {"query": {"function": "x"}}
     assert client.post("/v1/estimate/stages/structure", json=body).status_code == 401
-    assert client.post("/v1/estimate/stages/structure", json=body, headers=_h(RET_KEY)).status_code == 401
+    assert (
+        client.post("/v1/estimate/stages/structure", json=body, headers=_h(RET_KEY)).status_code
+        == 401
+    )
 
 
 # --- regression: existing endpoints still authenticate ---------------------
+
 
 def test_existing_endpoints_still_work(client, monkeypatch):
     import app.api.routers.estimate as estimate_router
     import app.api.routers.retrieval as retrieval_router
 
     async def fake_estimate(transcript, idempotency_key=None):
-        return Estimate(confidence="insufficient", reasoning="stub", insufficient_context_explanation="stub")
+        return Estimate(
+            confidence="insufficient", reasoning="stub", insufficient_context_explanation="stub"
+        )
 
     async def fake_retrieve(**kwargs):
         return RetrievalResult(chunks=[], low_confidence=True, candidates_evaluated=0)
@@ -252,7 +280,8 @@ def test_existing_endpoints_still_work(client, monkeypatch):
         {"effective_search_mode": lambda self: "vector", "effective_rerank": lambda self: False},
     )()
     monkeypatch.setattr(
-        retrieval_router, "get_embedder",
+        retrieval_router,
+        "get_embedder",
         lambda: type("E", (), {"embed_one": staticmethod(lambda t: [0.0] * 1536)})(),
     )
     monkeypatch.setattr(retrieval_router, "get_runtime_retrieval_config", lambda: fake_runtime)

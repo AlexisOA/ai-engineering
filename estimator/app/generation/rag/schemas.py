@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Closed universe of client sectors present in the sample dataset. Kept as a
 # Literal so a typo or an unexpected sector fails validation loudly instead of
@@ -262,12 +262,31 @@ class Assumption(BaseModel):
     rationale: str
 
 
+class SourceReference(BaseModel):
+    """A line-level citation: one chunk backing a single task, with its evidence.
+
+    Unlike the old chunk-id-only citation, this carries the parent document id
+    and a verbatim snippet, so a citation can be checked for plausibility, not
+    just for chunk-id existence.
+    """
+
+    chunk_id: int = Field(
+        description="Id of the retrieved chunk supporting this line (a RetrievedChunk.id)."
+    )
+    document_id: str | None = Field(
+        default=None, description="Historical budget document the chunk belongs to."
+    )
+    evidence: str = Field(description="Verbatim span or figure from the source backing this line.")
+
+
 class TaskItem(BaseModel):
     """One concrete engineering task inside a functional module, in engineer-days.
 
-    ``sources`` cite the historical chunk(s) the task was derived from; a task
-    with no historical analog is left uncited and should surface as an
-    :class:`Assumption` instead.
+    ``sources`` cite the historical chunk(s) the task was derived from, at
+    line-level granularity; a task with no historical analog must set
+    ``grounded=False`` and leave ``sources`` empty (and should usually surface
+    as an :class:`Assumption` too) instead of citing nothing while still
+    claiming to be grounded.
     """
 
     name: str
@@ -279,7 +298,21 @@ class TaskItem(BaseModel):
         "mode (Session 10): the LLM proposes the module→task structure and the hours "
         "are derived afterwards by per-task vector search, not inferred here.",
     )
-    sources: list[int] = Field(default_factory=list, description="Chunk ids that back this task.")
+    grounded: bool = Field(
+        description="Whether this task is backed by real historical source(s). False means "
+        "no sufficient source data — do not invent a citation to satisfy this flag."
+    )
+    sources: list[SourceReference] = Field(
+        default_factory=list, description="Line-level citations that back this task."
+    )
+
+    @model_validator(mode="after")
+    def grounded_matches_sources(self) -> "TaskItem":
+        if self.grounded and not self.sources:
+            raise ValueError("grounded=True requires at least one source reference")
+        if not self.grounded and self.sources:
+            raise ValueError("grounded=False must not carry source references")
+        return self
 
 
 class WorkModule(BaseModel):
@@ -418,6 +451,44 @@ class GenerateResult(BaseModel):
         description="Cited source ids not present in kept_chunks (empty = clean).",
     )
     coherent: bool = Field(description="False when an insufficient estimate still carries numbers.")
+
+
+# ---------------------------------------------------------------------------
+# Session 11 — line-level citation verification.
+#
+# verify_citations() walks every task and classifies its citation status; a
+# task's line is "grounded" only when every chunk_id it cites was actually
+# retrieved, "dangling" when at least one wasn't (a hallucinated citation),
+# and "insufficient" when the task itself declared grounded=False.
+# ---------------------------------------------------------------------------
+
+
+class CitationLine(BaseModel):
+    """One task's citation outcome, identified by its module/task path."""
+
+    module: str
+    task: str
+    status: Literal["grounded", "dangling", "insufficient"]
+    chunk_ids: list[int] = Field(default_factory=list, description="Chunk ids this task cited.")
+
+
+class CitationReport(BaseModel):
+    """Outcome of :func:`app.generation.rag.validation.verify_citations`."""
+
+    lines: list[CitationLine] = Field(default_factory=list)
+    top_level_fabricated_ids: list[int] = Field(
+        default_factory=list,
+        description="Estimate.sources citations (not task-level) that were never retrieved.",
+    )
+    fabricated_chunk_ids: list[int] = Field(
+        default_factory=list,
+        description="All fabricated chunk ids (dangling task lines + top-level), sorted and "
+        "deduplicated. Kept flat so callers can build a single retry-feedback message.",
+    )
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.fabricated_chunk_ids
 
 
 # ---------------------------------------------------------------------------

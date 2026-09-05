@@ -18,8 +18,9 @@ from app.generation.rag.schemas import RetrievedChunk
 
 def _wrap_chunk(chunk: RetrievedChunk) -> str:
     """Render a single chunk as a self-describing ``<source>`` XML element."""
+    document_id = chunk.source_id or chunk.budget_id or "unknown"
     return (
-        f'<source id="{chunk.id}" sector="{chunk.sector}" '
+        f'<source id="{chunk.id}" document_id="{document_id}" sector="{chunk.sector}" '
         f'project_year="{chunk.project_year}" chunk_type="{chunk.chunk_type}" '
         f'distance="{chunk.distance:.4f}">\n'
         f"{chunk.content}\n"

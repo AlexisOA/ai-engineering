@@ -118,7 +118,7 @@ def test_generate_structure_only_omits_hours(client, monkeypatch):
         return Estimate(
             confidence="high",
             reasoning="structure only",
-            modules=[{"name": "Auth", "tasks": [{"name": "Login"}]}],
+            modules=[{"name": "Auth", "tasks": [{"name": "Login", "grounded": False}]}],
         )
 
     monkeypatch.setattr(stages, "generate_estimate", fake_generate)

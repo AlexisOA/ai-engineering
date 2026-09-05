@@ -64,6 +64,17 @@ dev = [
     "ruff>=0.5",
     "fakeredis>=2.20",
     "deepeval>=1.0",
+    # Session 11 — local/Claude RAGAS fallback (used only when OpenAI credit is
+    # unavailable; see scripts/eval_ragas_s11_fallback.py).
+    "langchain-anthropic>=0.3",
+    # Session 11 — RAGAS generation-quality evaluation. Pinned: 0.4.x ships a
+    # hard, unconditional `from langchain_community.chat_models.vertexai import
+    # ChatVertexAI` in ragas/llms/base.py that fails to import against the
+    # langchain-community version this project's other langchain deps resolve
+    # to (no vertexai extra installed) — a packaging bug, not a version we
+    # need. 0.2.x predates that import and has the classic evaluate()/metrics
+    # API this exercise uses.
+    "ragas==0.2.15",
 ]
 
 [tool.ruff]
