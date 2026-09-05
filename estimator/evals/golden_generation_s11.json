@@ -1,0 +1,35 @@
+{
+  "description": "Session 11 golden set for RAG generation evaluation (RAGAS). Reuses verbatim the 5 budget-only queries (Q1-Q5) from evals/golden_retrieval.json (Session 10) — each is long enough (>100 chars) to feed directly as the `transcript` of estimate_from_transcript, no new transcripts were authored. `ground_truth` is a hand-written reference estimate per query, derived from the real historical budgets in data/budgets_sample.json that the Session 10 golden set already marks as relevant for that query (hours and component names are the actual recorded figures, not invented).",
+  "queries": [
+    {
+      "id": "Q1",
+      "query": "Mobile banking application with OAuth2 authentication, PSD2 open banking compliance, strong customer authentication and a transaction ledger.",
+      "grounding_budgets": ["BUD-2024-001", "BUD-2024-003"],
+      "ground_truth": "Grounded primarily in BUD-2024-001 (mobile banking API with OAuth 2.0 and PSD2, 480h total): Authentication & Access module with OAuth 2.0 authentication backend (120h) and PSD2 open banking connectors / strong customer authentication (160h); Core Domain module with the transaction ledger service (140h), informed by the settlement/reconciliation patterns of the payments gateway in BUD-2024-003 (600h) as a supporting analog; Notifications module with push and email notifications (60h). Total ~480 engineer-hours (~60 engineer-days), confidence high given a near-exact historical analog."
+    },
+    {
+      "id": "Q2",
+      "query": "Headless e-commerce storefront with a product catalog, shopping cart checkout and personalized product recommendations.",
+      "grounding_budgets": ["BUD-2024-005", "BUD-2024-006", "BUD-2024-007", "BUD-2024-017"],
+      "ground_truth": "Grounded primarily in BUD-2024-005 (headless e-commerce storefront with personalized recommendations, 460h total, the closest historical analog): Core Domain module with the product catalog API (150h) and personalized recommendations (110h); Frontend/UX module with the cart-and-checkout service (140h) and the storefront PWA (60h). BUD-2024-017's bare-bones checklist (login/catalog/cart/checkout/order-email/admin, 160h) supports a leaner MVP variant if scope is trimmed; BUD-2024-006's vendor-payouts/dispute-handling components (540h) are not applicable here (single-vendor storefront, no marketplace). Total ~460 engineer-hours (~57-58 engineer-days), confidence high."
+    },
+    {
+      "id": "Q3",
+      "query": "Telemedicine platform for patient appointment scheduling and video consultations with HL7/FHIR integration and clinical records.",
+      "grounding_budgets": ["BUD-2024-009", "BUD-2024-010"],
+      "ground_truth": "Grounded primarily in BUD-2024-009 (patient appointment and telemedicine platform with HL7/FHIR, 560h total, a near-exact analog): Data & Integrations module with the FHIR integration layer (190h); Core Domain module with appointment scheduling (150h) and telemedicine video sessions (160h); Security & Compliance module with the consent and audit module (60h). BUD-2024-010's wearable data ingestion and clinical alerting (480h) is a supporting reference for the architecture of clinical data pipelines, not directly in scope (no wearables mentioned in the brief). Total ~560 engineer-hours (~70 engineer-days), confidence high."
+    },
+    {
+      "id": "Q4",
+      "query": "Industrial IoT platform ingesting sensor telemetry for predictive maintenance and real-time equipment monitoring in a factory.",
+      "grounding_budgets": ["BUD-2024-013", "BUD-2024-015"],
+      "ground_truth": "Grounded primarily in BUD-2024-013 (factory IoT telemetry and predictive maintenance, 500h total, a near-exact analog): Data & Integrations module with sensor telemetry ingestion (170h); Core Domain module with the predictive maintenance models (200h); Infrastructure & DevOps module with SCADA dashboard integration (130h). BUD-2024-015's smart-meter data pipeline and load-forecasting service (540h, energy-grid domain) is a supporting analog for the telemetry-ingestion and dashboard patterns, not a direct fit (different sector, no demand-response scope here). Total ~500 engineer-hours (~62-63 engineer-days), confidence high."
+    },
+    {
+      "id": "Q5",
+      "query": "Real-time payments gateway with fraud detection, transaction reconciliation and a double-entry ledger.",
+      "grounding_budgets": ["BUD-2024-003", "BUD-2024-001"],
+      "ground_truth": "Grounded primarily in BUD-2024-003 (real-time payments gateway with fraud detection and reconciliation, 600h total, a near-exact analog): Core Domain module with the payment gateway core (220h) and the double-entry-ledger-equivalent settlement reconciliation (120h); Security & Compliance module with real-time fraud detection (200h); Frontend/UX module with the merchant dashboard (60h). BUD-2024-001's transaction ledger service (140h) is a supporting analog for the ledger design. Total ~600 engineer-hours (~75 engineer-days), confidence high."
+    }
+  ]
+}

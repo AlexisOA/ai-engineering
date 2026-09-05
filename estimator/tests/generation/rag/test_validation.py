@@ -1,4 +1,4 @@
-"""Unit tests for post-generation validation (Session 9)."""
+"""Unit tests for post-generation validation (Session 9-11)."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ from app.generation.rag.schemas import (
     Estimate,
     RetrievedChunk,
     SourceCitation,
+    SourceReference,
     TaskItem,
     WorkModule,
 )
-from app.generation.rag.validation import check_coherence, validate_citations
+from app.generation.rag.validation import check_coherence, verify_citations
 
 
 def _chunk(chunk_id: int) -> RetrievedChunk:
@@ -23,21 +24,32 @@ def _chunk(chunk_id: int) -> RetrievedChunk:
     )
 
 
+def _task(name: str, *, chunk_ids: list[int]) -> TaskItem:
+    if not chunk_ids:
+        return TaskItem(name=name, grounded=False, sources=[])
+    return TaskItem(
+        name=name,
+        engineer_days=20,
+        grounded=True,
+        sources=[
+            SourceReference(chunk_id=cid, document_id=f"BUD-{cid}", evidence="120 hours")
+            for cid in chunk_ids
+        ],
+    )
+
+
 def _estimate(
-    *, source_ids: list[int], component_sources: list[int], confidence="high"
+    *, top_level_source_ids: list[int], task_chunk_ids: list[int], confidence="high"
 ) -> Estimate:
     return Estimate(
         total_engineer_days=20,
         duration_weeks=4,
         modules=[
-            WorkModule(
-                name="Authentication",
-                tasks=[TaskItem(name="Auth", engineer_days=20, sources=component_sources)],
-            )
+            WorkModule(name="Authentication", tasks=[_task("Auth", chunk_ids=task_chunk_ids)])
         ],
         sources=[
             SourceCitation(source_id=sid, relevance="primary", used_for="auth")
-            for sid in source_ids
+            for sid in top_level_source_ids
         ],
         assumptions=[],
         confidence=confidence,
@@ -45,28 +57,48 @@ def _estimate(
     )
 
 
-def test_validate_citations_all_valid_returns_empty():
+def test_verify_citations_all_valid_is_clean():
     chunks = [_chunk(1), _chunk(2)]
-    estimate = _estimate(source_ids=[1, 2], component_sources=[1])
-    assert validate_citations(estimate, chunks) == []
+    estimate = _estimate(top_level_source_ids=[1, 2], task_chunk_ids=[1])
+    report = verify_citations(estimate, chunks)
+    assert report.is_clean
+    assert report.fabricated_chunk_ids == []
+    assert report.lines[0].status == "grounded"
 
 
-def test_validate_citations_flags_fabricated_ids():
+def test_verify_citations_flags_dangling_task_line():
     chunks = [_chunk(1), _chunk(2)]
-    # cites 99 (top-level) and 42 (inside a component) — neither retrieved.
-    estimate = _estimate(source_ids=[1, 99], component_sources=[42])
-    assert validate_citations(estimate, chunks) == [42, 99]
+    # Task cites 42, never retrieved — a dangling (hallucinated) citation.
+    estimate = _estimate(top_level_source_ids=[1], task_chunk_ids=[42])
+    report = verify_citations(estimate, chunks)
+    assert not report.is_clean
+    assert report.lines[0].status == "dangling"
+    assert report.fabricated_chunk_ids == [42]
 
 
-def test_validate_citations_no_sources_is_valid():
+def test_verify_citations_flags_top_level_fabrication_separately():
     chunks = [_chunk(1)]
-    estimate = _estimate(source_ids=[], component_sources=[])
-    assert validate_citations(estimate, chunks) == []
+    estimate = _estimate(top_level_source_ids=[1, 99], task_chunk_ids=[1])
+    report = verify_citations(estimate, chunks)
+    assert report.top_level_fabricated_ids == [99]
+    assert report.fabricated_chunk_ids == [99]
+    assert report.lines[0].status == "grounded"
 
 
-def test_validate_citations_empty_retrieval_flags_every_cited_id():
-    estimate = _estimate(source_ids=[1], component_sources=[2])
-    assert validate_citations(estimate, []) == [1, 2]
+def test_verify_citations_ungrounded_task_is_insufficient_not_dangling():
+    chunks = [_chunk(1)]
+    estimate = _estimate(top_level_source_ids=[], task_chunk_ids=[])
+    report = verify_citations(estimate, chunks)
+    assert report.is_clean
+    assert report.lines[0].status == "insufficient"
+    assert report.lines[0].chunk_ids == []
+
+
+def test_verify_citations_empty_retrieval_flags_every_cited_id():
+    estimate = _estimate(top_level_source_ids=[1], task_chunk_ids=[2])
+    report = verify_citations(estimate, [])
+    assert report.fabricated_chunk_ids == [1, 2]
+    assert report.lines[0].status == "dangling"
 
 
 def test_check_coherence_insufficient_with_nulls_is_coherent():
@@ -92,5 +124,5 @@ def test_check_coherence_insufficient_with_numbers_is_incoherent():
 
 
 def test_check_coherence_non_insufficient_always_true():
-    estimate = _estimate(source_ids=[1], component_sources=[1], confidence="low")
+    estimate = _estimate(top_level_source_ids=[1], task_chunk_ids=[1], confidence="low")
     assert check_coherence(estimate) is True

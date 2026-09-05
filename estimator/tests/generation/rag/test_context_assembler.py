@@ -13,7 +13,7 @@ class CharEncoder:
         return list(text)
 
 
-def _chunk(chunk_id: int, content: str) -> RetrievedChunk:
+def _chunk(chunk_id: int, content: str, budget_id: str | None = None) -> RetrievedChunk:
     return RetrievedChunk(
         id=chunk_id,
         content=content,
@@ -21,20 +21,27 @@ def _chunk(chunk_id: int, content: str) -> RetrievedChunk:
         project_year=2024,
         chunk_type="budget_component",
         distance=0.123,
+        budget_id=budget_id,
     )
 
 
 def test_build_context_block_wraps_each_chunk_in_source_xml():
-    chunks = [_chunk(142, "Cart and checkout service")]
+    chunks = [_chunk(142, "Cart and checkout service", budget_id="BUD-2024-005")]
     block = build_context_block(chunks)
 
     assert '<source id="142"' in block
+    assert 'document_id="BUD-2024-005"' in block
     assert 'sector="ecommerce"' in block
     assert 'project_year="2024"' in block
     assert 'chunk_type="budget_component"' in block
     assert 'distance="0.1230"' in block
     assert "Cart and checkout service" in block
     assert block.strip().endswith("</source>")
+
+
+def test_build_context_block_document_id_falls_back_to_unknown():
+    block = build_context_block([_chunk(1, "no parent id on this chunk")])
+    assert 'document_id="unknown"' in block
 
 
 def test_build_context_block_preserves_order():
