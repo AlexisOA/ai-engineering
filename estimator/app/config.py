@@ -215,6 +215,20 @@ class Settings(BaseSettings):
     SYNTHESIS_ENABLED: bool = True
     SYNTHESIS_CONTRADICTION_THRESHOLD: float = 0.35
 
+    # --- Session 12 fields (hand-rolled agent loop over the raw Responses API) --
+    # The one deliberate exception to "everything goes through LLMWrapper" — see
+    # app/generation/agentic/agent_loop.py. Debug cheaply with gpt-5-mini/minimal
+    # effort on the simple transcript; the real run is gpt-5/medium.
+    AGENT_MODEL: str = "gpt-5"
+    AGENT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "medium"
+    # Hard safeguard independent of the loop's natural termination (README pitfall:
+    # "no poner condición de parada").
+    AGENT_MAX_ITERATIONS: int = 8
+    # search_budgets filters to chunk_type='historical_task' (the Session 10 task
+    # corpus) — per-task granularity is what a single component query needs.
+    AGENT_SEARCH_TOP_K: int = 5
+    AGENT_SEARCH_DISTANCE_THRESHOLD: float = 0.6
+
     @model_validator(mode="after")
     def validate_at_least_one_api_key(self) -> "Settings":
         """LiteLLM may try either provider via fallback, so we require at least one key."""

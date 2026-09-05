@@ -1,0 +1,90 @@
+# DEVIATION (disclosed): Claude (not gpt-5 Responses API) + the offline reference_retrieval.py stub (not the real pipeline) — OpenAI credit was exhausted the day this ran. See scripts/run_agent_s12_fallback.py docstring.
+
+STEP 1
+  reasoning:   Perfecto. He identificado **cuatro componentes claramente diferenciados** en el proyecto RUTA de TransPeninsular Logística. Ahora voy a buscar referencias históricas para cada uno.
+
+---
+
+## 1. Búsqueda de referencias históricas
+  action:      search_budgets(query='backend API gestión pedidos rutas envíos tarifas logística', filters={'sectors': ['logistics'], 'component_type': 'backend/API'})
+  observation: 2 historical items for 'backend API gestión pedidos rutas envíos tarifas logística'; hours=[1150.0, 940.0]
+
+STEP 2
+  reasoning:   (parallel tool call in the same turn as the previous step)
+  action:      search_budgets(query='integración SAP ERP middleware IDocs sincronización facturación', filters={'sectors': None, 'component_type': 'ERP integration'})
+  observation: 2 historical items for 'integración SAP ERP middleware IDocs sincronización facturación'; hours=[860.0, 720.0]
+
+STEP 3
+  reasoning:   (parallel tool call in the same turn as the previous step)
+  action:      search_budgets(query='app móvil repartidores Android iOS modo offline sincronización firma foto', filters={'sectors': ['logistics'], 'component_type': 'mobile app'})
+  observation: 1 historical items for 'app móvil repartidores Android iOS modo offline sincronización firma foto'; hours=[780.0]
+
+STEP 4
+  reasoning:   (parallel tool call in the same turn as the previous step)
+  action:      search_budgets(query='panel analítica cuadros mando KPIs dashboard reporting alertas', filters={'sectors': ['logistics'], 'component_type': None})
+  observation: 1 historical items for 'panel analítica cuadros mando KPIs dashboard reporting alertas'; hours=[560.0]
+
+STEP 5
+  reasoning:   Excelente, todas las búsquedas han devuelto referencias históricas relevantes. Ahora procedo a calcular la estimación total.
+
+---
+
+## 2. Cálculo de la estimación
+  action:      calculate_estimate(components=[{'name': 'Backend de negocio con API (gestión pedidos, rutas, envíos, tarifas)', 'reference_amounts': [1150.0, 940.0]}, {'name': 'Integración con SAP ERP (IDocs, middleware, reintentos)', 'reference_amounts': [860.0, 720.0]}, {'name': 'App móvil repartidores (Android/iOS, offline, firma, foto)', 'reference_amounts': [780.0]}, {'name': 'Panel de analítica con cuadros de mando y alertas', 'reference_amounts': [560.0]}])
+  observation: total=3651.3h across 4 components
+
+STEP 6
+  reasoning:   ---
+
+## 3. Validación del estimado
+  action:      validate_estimate(components=[{'name': 'Backend de negocio con API (gestión pedidos, rutas, envíos, tarifas)', 'estimated_hours': 1201.8, 'reference_amounts': [1150.0, 940.0]}, {'name': 'Integración con SAP ERP (IDocs, middleware, reintentos)', 'estimated_hours': 908.5, 'reference_amounts': [860.0, 720.0]}, {'name': 'App móvil repartidores (Android/iOS, offline, firma, foto)', 'estimated_hours': 897.0, 'reference_amounts': [780.0]}, {'name': 'Panel de analítica con cuadros de mando y alertas', 'estimated_hours': 644.0, 'reference_amounts': [560.0]}], total_hours=3651.3)
+  observation: estimate passed all guardrails
+
+FINAL ESTIMATE  (iterations=6, stopped=completed)
+{
+  "components": [
+    {
+      "name": "Backend de negocio con API (gestión pedidos, rutas, envíos, tarifas)",
+      "estimated_hours": 1201.8,
+      "reference_count": 2,
+      "unbudgeted": false,
+      "rationale": "Core business backend with order management, route assignment, shipment tracking, and tariff calculation. Exposes REST API for all other modules. Based on two logistics sector references: 1,150h (orders/routes/tariffs API) and 940h (real-time shipment tracking API)."
+    },
+    {
+      "name": "Integración con SAP ERP (IDocs, middleware, reintentos)",
+      "estimated_hours": 908.5,
+      "reference_count": 2,
+      "unbudgeted": false,
+      "rationale": "SAP ERP integration for bidirectional sync of invoicing, customers, and item master data. Includes IDoc mapping, middleware layer, and retry management. Based on two industrial sector SAP integration references: 860h (SAP sync via IDocs with retries) and 720h (ERP middleware with retry layer and queue monitoring)."
+    },
+    {
+      "name": "App móvil repartidores (Android/iOS, offline, firma, foto)",
+      "estimated_hours": 897.0,
+      "reference_count": 1,
+      "unbudgeted": false,
+      "rationale": "Mobile app for delivery drivers on Android and iOS with daily route sheet, delivery confirmation with signature and photo, and offline mode with automatic sync when connectivity returns. Based on one logistics sector reference: 780h (delivery app with route, signature, photo, and offline sync)."
+    },
+    {
+      "name": "Panel de analítica con cuadros de mando y alertas",
+      "estimated_hours": 644.0,
+      "reference_count": 1,
+      "unbudgeted": false,
+      "rationale": "Analytics dashboard with KPI visualizations (on-time delivery, cost per route, incidents), trend analysis, filters by zone and customer, and automatic threshold-based alerts. Based on one logistics sector reference: 560h (analytics panel with KPI dashboards, zone/customer filters, and threshold alerts)."
+    }
+  ],
+  "total_hours": 3651.3,
+  "confidence": "high",
+  "assumptions": [
+    "Backend developed from scratch (no legacy system migration required)",
+    "Client has technical access to SAP and IDoc documentation",
+    "Mobile app can be native or hybrid (React Native/Flutter recommended)",
+    "Team is proficient in Python (backend) and React (frontend)",
+    "Database selection open (PostgreSQL/MySQL recommended)",
+    "Infrastructure, DevOps, CI/CD, and cloud costs are excluded",
+    "Third-party licenses (SAP connectors, signature libraries) are excluded",
+    "End-user training and data migration from spreadsheets are excluded",
+    "Alerts via email/push notifications (SMS not included)",
+    "Testing includes minimum 4 Android + 2 iOS device models"
+  ],
+  "summary": "The RUTA logistics platform for TransPeninsular Logística comprises four distinct components totaling 3,651.3 engineering hours. The core business backend with API (1,201.8h) and SAP ERP integration (908.5h) form the critical foundation (phase 1: 2,110.3h). The mobile app for drivers with offline capability (897.0h) and analytics dashboard with KPIs and alerts (644.0h) can follow in phase 2 (1,541.0h). All estimates are grounded in historical references from comparable logistics and industrial sector projects, with high confidence given the clear functional decomposition and strong reference matches."
+}

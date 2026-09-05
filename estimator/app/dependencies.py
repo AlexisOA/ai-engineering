@@ -7,7 +7,7 @@ from functools import lru_cache
 import anthropic
 import redis
 import structlog
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from app.generation.cag.semantic import EstimationSemanticCache
 from app.config import get_settings
@@ -98,6 +98,16 @@ def get_openai_client() -> OpenAI | None:
     if not settings.OPENAI_API_KEY:
         return None
     return OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+@lru_cache
+def get_async_openai_client() -> AsyncOpenAI | None:
+    """Async OpenAI client for the Session 12 agent loop (``responses.create``/
+    ``responses.parse`` are awaited from the loop's own async function)."""
+    settings = get_settings()
+    if not settings.OPENAI_API_KEY:
+        return None
+    return AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 @lru_cache
@@ -389,3 +399,56 @@ def get_session_store() -> SessionStore:
     """
     settings = get_settings()
     return SessionStore(max_turns=settings.MAX_CONVERSATION_TURNS)
+
+
+# --- Session 12: agent loop retrieval backend -------------------------------
+# `generation/<x>/*` may not import another `generation` sibling directly
+# (ARCHITECTURE.md); this composition root is explicitly allowed to, so the
+# agent's `search_budgets` tool receives the real S9-S10 pipeline as an
+# injected callable rather than importing `generation/rag` itself — the same
+# style `agentic/boss.py` already uses for its Actor/Critic callables.
+
+
+def get_agent_retrieval_backend():
+    """Wrap the real hybrid+rerank retrieval pipeline as the agent's RetrievalBackend.
+
+    Filters to ``chunk_type='historical_task'`` (the Session 10 task corpus,
+    ``scripts/build_task_corpus.py --ingest``) — per-component queries need
+    task-level granularity, not whole-budget chunks.
+    """
+    from app.generation.rag.retrieval.collections import Collection
+    from app.generation.rag.retrieval.pipeline import retrieve
+
+    settings = get_settings()
+    embedder = get_embedder()
+    if embedder is None:
+        raise RuntimeError("Agent retrieval backend requires OPENAI_API_KEY (embeddings).")
+
+    async def backend(query: str, filters: dict | None) -> list[dict]:
+        filters = filters or {}
+        sectors = filters.get("sectors") or None
+        runtime_retrieval = get_runtime_retrieval_config()
+        result = await retrieve(
+            query_embedding=embedder.embed_one(query),
+            query_text=query,
+            search_mode=runtime_retrieval.effective_search_mode(),
+            rerank=runtime_retrieval.effective_rerank(),
+            top_k=settings.AGENT_SEARCH_TOP_K,
+            distance_threshold=settings.AGENT_SEARCH_DISTANCE_THRESHOLD,
+            collection=Collection.BUDGET,
+            chunk_types=["historical_task"],
+            sectors=sectors,
+        )
+        return [
+            {
+                "id": chunk.id,
+                "content_preview": chunk.content[:300],
+                "sector": chunk.sector,
+                "budget_id": chunk.budget_id or chunk.source_id,
+                "estimated_hours": chunk.estimated_hours,
+                "distance": chunk.distance,
+            }
+            for chunk in result.chunks
+        ]
+
+    return backend
