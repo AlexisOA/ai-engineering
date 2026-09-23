@@ -1,0 +1,32 @@
+# Development conveniences for the `estimator-web` service, layered automatically
+# by Compose on top of docker-compose.yml WHEN INVOKED FROM THIS DIRECTORY (`cd
+# estimator-web && docker compose up`). Running `docker compose up` from the repo
+# root does NOT pick this file up — that root run stays the Session 15 conforming
+# shape (RAILS_ENV=production, no bind mount).
+#
+# Re-adds exactly what docker-compose.yml had before Session 15: the full bind
+# mount, the bundle/node_modules named volumes so the mount doesn't shadow
+# installed gems, RAILS_ENV=development, and bin/dev (Puma + tailwindcss:watch).
+
+services:
+  estimator-web:
+    environment:
+      RAILS_ENV: development
+      # RAILS_FORCE_SSL / RAILS_ASSUME_SSL / SECRET_KEY_BASE (set by the base
+      # file) are only read by config/environments/production.rb — irrelevant
+      # here since RAILS_ENV=development loads development.rb instead.
+
+    volumes:
+      - .:/rails
+      - bundle_cache:/usr/local/bundle
+      - node_modules:/rails/node_modules
+
+    command: bash -c "rm -f tmp/pids/server.pid && bin/rails db:prepare && bin/dev"
+
+    # Required for binding.irb / debug gem when attaching with `docker attach`.
+    tty: true
+    stdin_open: true
+
+volumes:
+  bundle_cache:
+  node_modules:

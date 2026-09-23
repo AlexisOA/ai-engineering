@@ -1,14 +1,22 @@
-# Docker Compose for local Rails development.
-# Mirrors the pattern used in ../estimator/docker-compose.yml (bind mount + hot
-# reload + healthchecked dependency). Production is intentionally out of scope.
+# Session 15: this is the CONFORMING base — self-contained image (no bind
+# mount), RAILS_ENV=production, no dev toolchain running. For local development
+# (bind mount, RAILS_ENV=development, bin/dev with tailwindcss:watch), run
+# `docker compose up` from *this directory* instead of the repo root:
+# docker-compose.override.yml next to this file re-adds those conveniences and
+# Compose auto-loads it.
 
 services:
   estimator-web:
     build: .
     container_name: estimator-web
     ports:
-      - "3000:3000"
+      - "3000:3000"            # the only public entry point in the full stack
 
+    # SECRET_KEY_BASE, AI_SERVICE_TOKEN, RETRIEVAL_API_KEY, ESTIMATE_API_KEY come
+    # from THIS file (resolved relative to this directory even when `include:`d
+    # from the root compose — NOT via ${VAR} interpolation in this YAML, which
+    # would instead resolve against the root's own .env/shell env when invoked
+    # from the repo root and silently blank these out).
     env_file:
       - path: .env
         required: false
@@ -19,8 +27,14 @@ services:
       DATABASE_PORT: 5432
       DATABASE_USER: postgres
       DATABASE_PASSWORD: postgres
-      RAILS_ENV: development
-      # FastAPI estimator URL — Rails calls it server-side via docker DNS.
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "1"
+      # No TLS-terminating proxy in front locally — see config/environments/production.rb.
+      RAILS_FORCE_SSL: "false"
+      RAILS_ASSUME_SSL: "false"
+      # FastAPI estimator URL — Rails calls it server-side via docker DNS. Not
+      # reachable from the host: the estimator publishes no port (see
+      # ../estimator/docker-compose.yml).
       ESTIMATOR_API_BASE_URL: http://estimator:8000
       # LLM calls over long transcriptions can take 1-2 min; leave plenty of head room.
       ESTIMATOR_AI_TIMEOUT: "180"
@@ -29,18 +43,18 @@ services:
       postgres:
         condition: service_healthy
 
+    # Persist ActiveStorage (:local) uploads across restarts. No bind mount, no
+    # bundle_cache/node_modules — the image already carries the gems and code.
     volumes:
-      # Full bind mount: any change in app/, config/, db/migrate/, etc. is seen
-      # immediately by Rails autoloader and tailwindcss:watch.
-      - .:/rails
-      # Named volume so the bind mount above does not shadow installed gems.
-      - bundle_cache:/usr/local/bundle
-      # Defensive: if jsbundling is added later, node_modules stays inside.
-      - node_modules:/rails/node_modules
+      - storage_data:/rails/storage
 
-    # Drop stale PID from previous runs, prepare DBs, then start foreman
-    # (Puma + tailwindcss:watch via Procfile.dev).
-    command: bash -c "rm -f tmp/pids/server.pid && bin/rails db:prepare && bin/dev"
+    # Drop stale PID from previous runs, prepare the (multi-db: primary + solid_cache
+    # + solid_queue + solid_cable) databases, then start Puma directly — no bin/dev,
+    # no tailwindcss:watch, assets are already precompiled into the image.
+    command: >
+      bash -c "rm -f tmp/pids/server.pid &&
+               bin/rails db:prepare &&
+               bin/rails server -b 0.0.0.0 -p 3000"
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/up"]
@@ -48,10 +62,6 @@ services:
       timeout: 5s
       start_period: 60s
       retries: 5
-
-    # Required for binding.irb / debug gem when attaching with `docker attach`.
-    tty: true
-    stdin_open: true
 
     restart: unless-stopped
 
@@ -77,5 +87,4 @@ services:
 
 volumes:
   postgres_data:
-  bundle_cache:
-  node_modules:
+  storage_data:

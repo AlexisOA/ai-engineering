@@ -1,0 +1,27 @@
+# Development conveniences for the `estimator` service, layered automatically by
+# Compose on top of docker-compose.yml WHEN INVOKED FROM THIS DIRECTORY (`cd
+# estimator && docker compose up`). Running `docker compose up` from the repo
+# root does NOT pick this file up (Compose only auto-loads an override.yml next
+# to the docker-compose.yml it was invoked against) — that root run stays the
+# Session 15 conforming shape: no bind mounts, no host port on `estimator`.
+#
+# Re-adds exactly what docker-compose.yml had before Session 15: bind mounts for
+# live reload, the host-published port 8000 (Swagger/curl during development),
+# and --reload on uvicorn.
+
+services:
+  estimator:
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"

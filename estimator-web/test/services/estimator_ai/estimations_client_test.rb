@@ -149,5 +149,19 @@ module EstimatorAi
       bad = Estimation::Request.new
       assert_raises(ArgumentError) { @client.estimate(bad) }
     end
+
+    test "sends the configured service token on every request (Session 15)" do
+      Rails.application.config.estimator_ai.ai_service_token = "expected-token"
+      client = EstimatorAi::EstimationsClient.new(base_url: "http://ai-test")
+
+      stub_request(:post, "http://ai-test/api/v1/estimate")
+        .with(headers: { "X-Service-Token" => "expected-token" })
+        .to_return(status: 200, body: structured_body.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      client.estimate(@request)
+    ensure
+      Rails.application.config.estimator_ai.ai_service_token = nil
+    end
   end
 end

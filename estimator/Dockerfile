@@ -38,8 +38,16 @@ WORKDIR /app
 # Bring in the pre-built virtual environment from the builder stage.
 COPY --from=builder /app/.venv /app/.venv
 
-# Copy application source code.
+# Copy application source code. alembic/ + alembic.ini are needed for the
+# startup migration (see docker-compose.yml's command); data/ carries the
+# ingestion catalog + seed sources; scripts/ backs the `docker compose exec
+# estimator python scripts/...` admin flows documented in CLAUDE.md. None of
+# these are optional once the dev bind mounts are gone.
 COPY app/ /app/app/
+COPY alembic/ /app/alembic/
+COPY alembic.ini /app/alembic.ini
+COPY data/ /app/data/
+COPY scripts/ /app/scripts/
 
 # Ensure the non-root user owns everything it needs to run.
 RUN chown -R appuser:appgroup /app

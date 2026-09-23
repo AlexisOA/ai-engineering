@@ -83,11 +83,13 @@ test:
 # for a full overview on how database connection configuration can be specified.
 #
 production:
+  # Session 15: inherit host/port/username/password from `default` (the same
+  # DATABASE_HOST/PORT/USER/PASSWORD env vars dev/test use) instead of a second,
+  # separate credential scheme — the containerized Postgres only provisions the
+  # one role the compose file sets up.
   primary: &primary_production
     <<: *default
     database: estimator_web_production
-    username: estimator_web
-    password: <%= ENV["ESTIMATOR_WEB_DATABASE_PASSWORD"] %>
   cache:
     <<: *primary_production
     database: estimator_web_production_cache

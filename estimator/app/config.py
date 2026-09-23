@@ -314,6 +314,13 @@ class Settings(BaseSettings):
     # default so the reference flow ends at the gate.
     SUPERVISOR_PERSISTENCE_ENABLED: bool = False
 
+    # --- Session 15 — service-to-service auth for the containerized deploy ----- #
+    # Guards POST /api/v1/estimate (header X-Service-Token). None disables it (401
+    # on every request) — same "blank = closed" convention as the Session 9 keys
+    # above. Set in .env / docker-compose's environment; the business backend
+    # sends it via EstimatorAi::EstimationsClient.
+    AI_SERVICE_TOKEN: str | None = None
+
     @model_validator(mode="after")
     def validate_at_least_one_api_key(self) -> "Settings":
         """LiteLLM may try either provider via fallback, so we require at least one key."""

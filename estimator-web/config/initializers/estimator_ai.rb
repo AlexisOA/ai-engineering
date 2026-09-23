@@ -6,4 +6,8 @@ Rails.application.config.estimator_ai = ActiveSupport::OrderedOptions.new.tap do
   # RETRIEVAL_API_KEY / ESTIMATE_API_KEY. Blank disables the RAG wizard (401).
   c.retrieval_api_key = ENV.fetch("RETRIEVAL_API_KEY", nil)
   c.estimate_api_key  = ENV.fetch("ESTIMATE_API_KEY", nil)
+
+  # Session 15: service-to-service token for POST /api/v1/estimate (X-Service-Token
+  # header). Must match the FastAPI service's AI_SERVICE_TOKEN.
+  c.ai_service_token = ENV.fetch("AI_SERVICE_TOKEN", nil)
 end

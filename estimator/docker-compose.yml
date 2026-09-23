@@ -1,12 +1,16 @@
-# Docker Compose configuration for local development.
-# For production, remove the bind mount and the --reload flag.
+# Session 15: this is the CONFORMING base — no bind mounts, no --reload, and the
+# estimator service publishes NO port to the host (internal network only, reached
+# by estimator-web via http://estimator:8000 + the AI_SERVICE_TOKEN). For local
+# development (bind mounts, --reload, host access on :8000), run `docker compose
+# up` from *this directory* instead of the repo root: docker-compose.override.yml
+# next to this file re-adds those conveniences and Compose auto-loads it.
 
 services:
   estimator:
     build: .
     container_name: estimator
-    ports:
-      - "8000:8000"
+    # No "ports:" here on purpose — not reachable from the host, only from the
+    # compose network (see docker-compose.override.yml for the dev exception).
 
     # Load environment variables (API keys, config) from the local .env file.
     env_file:
@@ -24,23 +28,11 @@ services:
       estimator-postgres:
         condition: service_healthy
 
-    # Bind-mount the app/ directory so code changes are reflected immediately
-    # inside the container without rebuilding the image. Tests, data and alembic
-    # too: the live session adds ingest sources to data/seed/ and a migration
-    # under alembic/versions/, both expected to survive a container restart.
-    volumes:
-      - ./app:/app/app
-      - ./tests:/app/tests
-      - ./data:/app/data
-      - ./scripts:/app/scripts
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
-
-    # Apply pending migrations on startup, then run uvicorn with auto-reload.
-    # Remove --reload for production deployments.
+    # Apply pending migrations on startup, then run uvicorn (no --reload: the
+    # image already carries the code, there is nothing to watch for changes).
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
     restart: unless-stopped
 

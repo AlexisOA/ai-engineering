@@ -8,6 +8,14 @@
 # Compose project (and therefore separate named volumes), so the database from
 # one mode is not visible from the other. Pick one mode per workflow and stick
 # with it.
+#
+# Session 15: `include:` only pulls in the two files listed below — NOT their
+# sibling `docker-compose.override.yml`s (each subproject has one, with dev
+# conveniences: bind mounts, --reload/bin/dev, the estimator's host port).
+# Compose only auto-loads an override.yml from the directory it was invoked
+# from, so running from THIS directory (the repo root) stays the conforming
+# shape the exercise verifies: no bind mounts, the estimator unreachable from
+# the host. Run from inside estimator/ or estimator-web/ for the dev override.
 
 include:
   - estimator/docker-compose.yml

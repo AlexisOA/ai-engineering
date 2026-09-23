@@ -11,9 +11,23 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+import app.api.security as security
 from app.dependencies import get_estimation_service
 from app.main import app
 from app.domain.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult
+
+SERVICE_TOKEN = "test-service-token"
+HEADERS = {"X-Service-Token": SERVICE_TOKEN}
+
+
+@pytest.fixture(autouse=True)
+def service_token(monkeypatch):
+    """POST /api/v1/estimate is guarded (Session 15) — supply a valid token by
+    default so these tests keep exercising the pipeline, not the auth layer
+    (that boundary has its own coverage in tests/api/test_security.py)."""
+    monkeypatch.setattr(
+        security, "get_settings", lambda: type("S", (), {"AI_SERVICE_TOKEN": SERVICE_TOKEN})()
+    )
 
 
 def _canned_result() -> EstimationResult:
@@ -65,7 +79,7 @@ VALID_PAYLOAD = {
 def test_valid_payload_returns_structured_response(
     client: TestClient, fake_service: FakeEstimationService
 ) -> None:
-    response = client.post("/api/v1/estimate", json=VALID_PAYLOAD)
+    response = client.post("/api/v1/estimate", json=VALID_PAYLOAD, headers=HEADERS)
     assert response.status_code == 200
     body = response.json()
     assert body["prompt_version"] == "v1"
@@ -79,7 +93,7 @@ def test_valid_payload_returns_structured_response(
 def test_endpoint_forwards_request_to_service(
     client: TestClient, fake_service: FakeEstimationService
 ) -> None:
-    client.post("/api/v1/estimate", json=VALID_PAYLOAD)
+    client.post("/api/v1/estimate", json=VALID_PAYLOAD, headers=HEADERS)
     assert len(fake_service.calls) == 1
     received = fake_service.calls[0]
     assert received.description == VALID_PAYLOAD["description"]
@@ -88,7 +102,7 @@ def test_endpoint_forwards_request_to_service(
 
 def test_missing_project_type_returns_422(client: TestClient, fake_service) -> None:
     payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "project_type"}
-    response = client.post("/api/v1/estimate", json=payload)
+    response = client.post("/api/v1/estimate", json=payload, headers=HEADERS)
     assert response.status_code == 422
     detail = response.json()["detail"]
     assert any(err["loc"][-1] == "project_type" for err in detail)
@@ -96,11 +110,11 @@ def test_missing_project_type_returns_422(client: TestClient, fake_service) -> N
 
 def test_invalid_enum_value_returns_422(client: TestClient, fake_service) -> None:
     payload = {**VALID_PAYLOAD, "project_type": "not_a_real_enum"}
-    response = client.post("/api/v1/estimate", json=payload)
+    response = client.post("/api/v1/estimate", json=payload, headers=HEADERS)
     assert response.status_code == 422
 
 
 def test_short_description_returns_422(client: TestClient, fake_service) -> None:
     payload = {**VALID_PAYLOAD, "description": "too short"}
-    response = client.post("/api/v1/estimate", json=payload)
+    response = client.post("/api/v1/estimate", json=payload, headers=HEADERS)
     assert response.status_code == 422

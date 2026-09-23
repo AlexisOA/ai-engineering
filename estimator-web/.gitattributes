@@ -1,5 +1,12 @@
 # See https://git-scm.com/docs/gitattributes for more about git attribute files.
 
+# Session 15: force LF regardless of the checkout OS. A Windows checkout without
+# this rule left every bin/* script with CRLF, which breaks the `#!/usr/bin/env
+# ruby`/`sh` shebang under Linux (container build AND the dev bind mount) with
+# "No such file or directory" — a standard rule missing from this project's
+# otherwise-trimmed .gitattributes (a fresh `rails new` includes it).
+bin/* text eol=lf
+
 # Mark the database schema as having been generated.
 db/schema.rb linguist-generated
 
