@@ -1,0 +1,116 @@
+==============================================================================
+SESSION 14 — SUPERVISOR + SPECIALISTS ESTIMATION GRAPH RUN
+==============================================================================
+status     : needs_review
+confidence : 0.37
+
+REQUIREMENTS (requirements_extractor)
+  - Build a telemetry platform that collects and distributes satellite antenna telemetry.
+  - Implement encrypted data distribution using quantum key distribution (QKD).
+  - Develop an interface to send traffic reports to Customs via a fixed-length file format over FTP.
+  - Interface format documentation is limited to a scanned PDF from 1994.
+  - Create a visual panel to display antenna status, capable of handling 400,000 events per second during peak satellite passes.
+  - Ensure the platform is SOC2 certified as required by the consortium.
+  - Support six languages for the user interface due to international partners.
+  - Develop a standard login screen with a custom biometric driver for iris scanning.
+  - Integrate the custom biometric driver with existing iris readers.
+  - Use an HSM certified FIPS 140-2 level 3 to store keys.
+  - Implement user management and roles functionality.
+  - Generate monthly reports for system activity.
+
+COMPONENTS + BUDGET MATCHES (budget_searcher)
+  - Telemetry Collection and Distribution [backend]
+      - 19.0h @ distance 0.436
+      - 21.0h @ distance 0.438
+      - 33.0h @ distance 0.441
+      - 21.0h @ distance 0.443
+      - 37.0h @ distance 0.444
+  - Data Encryption and Security [backend]
+      - 29.0h @ distance 0.419
+      - 16.0h @ distance 0.429
+      - 15.0h @ distance 0.429
+      - 17.0h @ distance 0.432
+      - 13.0h @ distance 0.432
+  - Customs Reporting Interface [integration]
+      - 32.0h @ distance 0.542
+      - 15.0h @ distance 0.545
+      - 20.0h @ distance 0.549
+      - 40.0h @ distance 0.549
+      - 27.0h @ distance 0.551
+  - User Interface Display Panel [frontend]
+      - 18.0h @ distance 0.509
+      - 35.0h @ distance 0.513
+      - 12.0h @ distance 0.513
+      - 23.0h @ distance 0.517
+      - 50.0h @ distance 0.519
+  - User Management and Authentication [backend]
+      - 33.0h @ distance 0.499
+      - 23.0h @ distance 0.502
+      - 17.0h @ distance 0.503
+      - 19.0h @ distance 0.503
+      - 22.0h @ distance 0.504
+  - Compliance and Certification Management [infrastructure]
+      - 40.0h @ distance 0.495
+      - 44.0h @ distance 0.496
+      - 28.0h @ distance 0.496
+      - 48.0h @ distance 0.501
+      - 37.0h @ distance 0.504
+  - Biometric Integration [integration]
+      - 31.0h @ distance 0.552
+      - 42.0h @ distance 0.557
+      - 31.0h @ distance 0.559
+      - 23.0h @ distance 0.562
+      - 45.0h @ distance 0.566
+  - Multi-language Support [frontend]
+      - 12.0h @ distance 0.524
+      - 20.0h @ distance 0.525
+      - 18.0h @ distance 0.527
+      - 22.0h @ distance 0.527
+      - 18.0h @ distance 0.528
+  - Reporting and Analytics [analytics]
+      - 29.0h @ distance 0.420
+      - 36.0h @ distance 0.430
+      - 35.0h @ distance 0.430
+      - 20.0h @ distance 0.430
+      - 29.0h @ distance 0.437
+
+ESTIMATE (estimate_generator)
+  - Telemetry Collection and Distribution: 3d  ('Telemetry Collection and Distribution': 26h (reliability 0.403) from 5 analogs)
+  - Data Encryption and Security: 2d  ('Data Encryption and Security': 18h (reliability 0.392) from 5 analogs)
+  - Customs Reporting Interface: 3d  ('Customs Reporting Interface': 27h (reliability 0.304) from 5 analogs)
+  - User Interface Display Panel: 4d  ('User Interface Display Panel': 28h (reliability 0.248) from 5 analogs)
+  - User Management and Authentication: 3d  ('User Management and Authentication': 23h (reliability 0.377) from 5 analogs)
+  - Compliance and Certification Management: 5d  ('Compliance and Certification Management': 39h (reliability 0.415) from 5 analogs)
+  - Biometric Integration: 4d  ('Biometric Integration': 34h (reliability 0.338) from 5 analogs)
+  - Multi-language Support: 2d  ('Multi-language Support': 18h (reliability 0.386) from 5 analogs)
+  - Reporting and Analytics: 4d  ('Reporting and Analytics': 30h (reliability 0.461) from 5 analogs)
+  TOTAL: 30d
+
+VALIDATION (coherence_validator)
+  ok: True
+
+HUMAN DECISION (human_review_gate)
+  {'approved': True, 'status': 'needs_review', 'notes': 'Reviewed manually: no historical precedent for this hardware/mainframe combo.'}
+
+AGENT CONTRIBUTIONS (audit trail — Level 3)
+  [ok] requirements_extractor -> None: extracted 12 requirements
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Telemetry Collection and Distribution'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Data Encryption and Security'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Customs Reporting Interface'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'User Interface Display Panel'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'User Management and Authentication'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Compliance and Certification Management'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Biometric Integration'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Multi-language Support'
+  [ok] budget_searcher -> search_budgets: searched budgets for 'Reporting and Analytics'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Telemetry Collection and Distribution'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Data Encryption and Security'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Customs Reporting Interface'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'User Interface Display Panel'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'User Management and Authentication'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Compliance and Certification Management'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Biometric Integration'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Multi-language Support'
+  [ok] estimate_generator -> derive_task_hours: derived hours for 'Reporting and Analytics'
+  [ok] coherence_validator -> validate_estimate: validated the consolidated estimate
+  [ok] human_review_gate -> None: human decision: {'approved': True, 'status': 'needs_review', 'notes': 'Reviewed manually: no historical precedent for this hardware/mainframe combo.'}

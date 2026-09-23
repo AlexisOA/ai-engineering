@@ -18,6 +18,7 @@ from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
 from app.api.routers.corpus_index import router as corpus_index_router
 from app.api.routers.estimate_graph import router as estimate_graph_router
+from app.api.routers.estimate_supervisor import router as estimate_supervisor_router
 from app.api.routers.retrieval import router as retrieval_router
 from app.api.routers.retrieval_advanced import router as retrieval_advanced_router
 
@@ -74,14 +75,21 @@ async def lifespan(app: FastAPI):
     # lifetime via an AsyncExitStack; a failure here (e.g. Postgres unreachable)
     # leaves app.state.graph = None so the graph endpoint 503s WITHOUT taking down
     # the unrelated routers.
+    # Session 14: the supervisor graph shares the SAME checkpointer/pool — one
+    # Postgres, no new infrastructure. Its runs use a ``supervisor:``-prefixed
+    # thread_id (see estimate_supervisor.py) so they never collide with the
+    # Session 13 graph's own checkpoints.
     app.state.graph = None
+    app.state.supervisor_graph = None
     app.state._graph_stack = AsyncExitStack()
     try:
         from app.domain.graph.build import build_graph
         from app.domain.graph.checkpointer import open_checkpointer
+        from app.domain.graph.supervisor.build import build_supervisor_graph
 
         checkpointer = await app.state._graph_stack.enter_async_context(open_checkpointer())
         app.state.graph = build_graph(checkpointer)
+        app.state.supervisor_graph = build_supervisor_graph(checkpointer)
         log.info("graph_ready")
     except Exception as exc:  # noqa: BLE001 — the graph is optional infrastructure.
         log.error("graph_init_failed", error=str(exc)[:400])
@@ -158,6 +166,8 @@ app.include_router(estimate_tasks_router)
 app.include_router(estimate_agent_router)
 # Session 13 — the estimation flow as an explicit LangGraph StateGraph.
 app.include_router(estimate_graph_router)
+# Session 14 — supervisor + specialised agents, with a human-in-the-loop gate.
+app.include_router(estimate_supervisor_router)
 
 
 @app.get("/health")

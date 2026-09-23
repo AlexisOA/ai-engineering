@@ -274,6 +274,12 @@ class Settings(BaseSettings):
     # locally but exports nothing, so observability never breaks startup.
     LOGFIRE_SERVICE_NAME: str = "estimator"
 
+    # --- Session 14 — supervisor + specialised agents, human-in-the-loop ----- #
+    # Below this, human_review_gate pauses the run for a person to decide. Reuses
+    # GRAPH_EXTRACTION_MODEL / AGENT_SEARCH_TOP_K / AGENT_SEARCH_DISTANCE_THRESHOLD
+    # for the rest of the flow — no other new settings this session.
+    SUPERVISOR_CONFIDENCE_THRESHOLD: float = 0.6
+
     @model_validator(mode="after")
     def validate_at_least_one_api_key(self) -> "Settings":
         """LiteLLM may try either provider via fallback, so we require at least one key."""
