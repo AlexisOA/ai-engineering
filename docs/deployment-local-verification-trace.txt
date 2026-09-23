@@ -1,0 +1,68 @@
+Session 15 — verificación real de docker compose up (Paso 7)
+Fecha: 2026-09-24
+Máquina: Windows, 16GB RAM
+
+Comando: docker compose up -d (desde la raíz del repo)
+
+=== 1) docker ps — los 4 servicios arriba y healthy ===
+NAMES                    STATUS                        PORTS
+estimator-web            Up (healthy)                  0.0.0.0:3000->3000/tcp
+estimator                Up (healthy)                  8000/tcp
+estimator-web-postgres   Up (healthy)                  0.0.0.0:5432->5432/tcp
+estimator-postgres       Up (healthy)                  0.0.0.0:5433->5432/tcp
+estimator-redis          Up (healthy)                  0.0.0.0:6379->6379/tcp, 0.0.0.0:8001->8001/tcp
+
+Nótese: "estimator" (el servicio IA) no publica el puerto 8000 al host — solo
+8000/tcp interno, sin el "0.0.0.0:8000->8000/tcp" que sí tienen los demás.
+
+=== 2) Rails responde en :3000 ===
+$ curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:3000/up
+HTTP 200
+
+=== 3) El servicio IA NO es alcanzable desde el host ===
+$ curl -s -m 4 -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8000/health
+HTTP 000 (no conecta — esperado, sin puerto publicado)
+
+=== 4) Estimación real end-to-end (formulario -> Rails -> IA -> LLM real -> persistida) ===
+Formulario enviado vía POST /estimations (con token CSRF real de la sesión Rails):
+  description: "A small B2B SaaS to manage employee equipment loans across
+  teams, with approvals and reporting."
+  project_type: web_saas / detail_level: medium / output_format: phases_table
+
+Respuesta: HTTP 302 -> Location: http://localhost:3000/estimations/1
+
+Logs reales del servicio IA (app/api/estimations.py, guardado por
+require_service_token — X-Service-Token validado):
+  estimation_request_received    description_chars=95 project_type=web_saas
+  cache_miss                     key_prefix=estimation:v2:e760af5341
+  semantic_cache_miss            reason=empty_index
+  llm_structured_call_started    model=gpt-4o-mini response_model=EstimationResult
+  llm_structured_call_completed  latency_ms=2162 model=gpt-4o-mini provider=openai
+  estimation_generated           confidence_pct=20 total_cost_eur=0 phases=1
+  cache_stored / semantic_cache_stored
+  "POST /api/v1/estimate HTTP/1.1" 200 OK
+
+GET /estimations/1 (con la sesión autenticada) -> HTTP 200 (la vista renderiza
+la estimación persistida en Postgres).
+
+=== 5) Persistencia tras reinicio completo ===
+$ docker compose down
+(los 5 contenedores + la red se paran y eliminan; los volúmenes con nombre
+ -- estimator_postgres_data, postgres_data, redis_data, storage_data -- NO)
+
+$ docker compose up -d
+(los 5 contenedores se recrean desde cero, sin ningún paso manual)
+
+Tras esperar a que estimator/estimator-web vuelvan a "healthy":
+$ curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:3000/estimations/1
+HTTP 200   <- la estimación #1 sigue ahí, sin haberla vuelto a crear
+
+$ curl -s -m 4 -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8000/health
+HTTP 000 (sigue sin ser alcanzable, como debe ser)
+
+=== Conclusión ===
+Las 5 comprobaciones del Paso 7 pasan con evidencia real, sin ningún dato
+inventado ni predicho. El único inconveniente durante la verificación fue de
+recursos de la máquina (16GB RAM, muy justos con otras aplicaciones abiertas)
+al construir las dos imágenes EN PARALELO -- resuelto construyéndolas una a
+una; una vez construidas, arrancar/parar/reiniciar el stack fue estable.

@@ -24,23 +24,26 @@ docker compose up
 
 ## Las 5 comprobaciones del Paso 7
 
-1. **`docker compose ps`** — los 4 servicios arriba; `estimator` y
-   `estimator-postgres` en `healthy` (Redis y el Postgres de negocio también,
-   de propina).
-2. **`curl http://localhost:3000`** — sirve el frontend de Rails.
+**Verificadas de verdad el 2026-09-24** (traza completa en
+`docs/deployment-local-verification-trace.txt`):
+
+1. **`docker compose ps`** — los 5 servicios arriba y `healthy` (`estimator`,
+   `estimator-web`, `estimator-postgres`, `estimator-web-postgres`, `estimator-redis`).
+2. **`curl http://localhost:3000/up`** — `HTTP 200`, sirve el frontend de Rails.
 3. **El servicio IA no es alcanzable desde el host** — `curl http://localhost:8000/health`
    no conecta (`estimator/docker-compose.yml` no publica ningún puerto; solo
    alcanzable vía la red interna de compose, como `http://estimator:8000` desde
    Rails).
-4. **Una estimación real, end-to-end**: desde `http://localhost:3000`, lanzar
-   una estimación → Rails llama a `POST http://estimator:8000/api/v1/estimate`
-   con el header `X-Service-Token` → el servicio IA corre el pipeline (guardrails
-   + LLM + cachés) → devuelve una estimación estructurada coherente → Rails la
-   persiste y la muestra.
-5. **Persistencia**: `docker compose down && docker compose up` — todo vuelve a
-   funcionar sin pasos manuales (los volúmenes con nombre —
-   `estimator_postgres_data`, `postgres_data`, `redis_data`, `storage_data` —
-   sobreviven al `down`).
+4. **Una estimación real, end-to-end**: formulario en `http://localhost:3000/estimations/new`
+   → Rails llama a `POST http://estimator:8000/api/v1/estimate` con el header
+   `X-Service-Token` → el servicio IA corre el pipeline real (guardrails + LLM
+   real `gpt-4o-mini` + cachés) → devuelve una estimación estructurada →
+   Rails la persiste (Postgres) y la muestra en `/estimations/1` (`HTTP 200`).
+5. **Persistencia**: `docker compose down && docker compose up -d` — los 5
+   contenedores se recrean desde cero sin ningún paso manual, y la
+   estimación #1 creada en el punto 4 sigue accesible (`HTTP 200`) — los
+   volúmenes con nombre (`estimator_postgres_data`, `postgres_data`,
+   `redis_data`, `storage_data`) sobreviven al `down`.
 
 ## Qué NO funcionó a la primera (para el directo)
 
@@ -65,6 +68,17 @@ docker compose up
   distintos, con volúmenes con nombre distintos** (ya documentado en
   `CLAUDE.md`) — confirmar en qué directorio se está antes de diagnosticar por
   qué "no aparecen los datos de la otra vez".
+- **Los scripts `bin/*` de `estimator-web` tenían CRLF** (checkout en Windows,
+  sin ninguna regla en `.gitattributes` que forzase LF) — rompe el shebang
+  `#!/usr/bin/env ruby`/`sh` bajo Linux tanto al construir la imagen como al
+  arrancar el contenedor. Añadida la regla `bin/* text eol=lf` (la incluye un
+  `rails new` por defecto; faltaba aquí) + normalizado el working tree.
+- **Construir las dos imágenes A LA VEZ (`docker compose build` sin argumentos)
+  puede agotar la memoria en una máquina con poca RAM** (`uv sync` con
+  torch/opencv/CUDA + `bundle install` compilando gemas nativas, en paralelo).
+  Construirlas una a una (`docker compose build estimator-web` y luego
+  `docker compose build estimator`) lo evita. Una vez construidas, levantar/parar/
+  reiniciar el stack completo no tuvo ese problema.
 
 ## Decisión de diseño: un solo Dockerfile para negocio (dev + conforme)
 
